@@ -1,43 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
-
-const SERVICES = [
-    { id: 'gemini', name: 'Google Gemini AI', type: 'NEURAL', status: 'ONLINE', latency: 45 },
-    { id: 'drive', name: 'Google Drive Integration', type: 'STORAGE', status: 'STANDBY', latency: 120 },
-    { id: 'payment', name: 'Pagar.me / PIX Gateway', type: 'FINANCE', status: 'ONLINE', latency: 85 },
-    { id: 'cdn', name: 'Video CDN (Cloudflare)', type: 'MEDIA', status: 'ONLINE', latency: 24 },
-];
-
-export const SystemConfiguration: React.FC = () => {
-    const [metrics, setMetrics] = useState(SERVICES);
-    const [scanProgress, setScanProgress] = useState(0);
-
-    // Simulate live metrics update
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setMetrics(prev => prev.map(s => ({
-                ...s,
-                latency: Math.max(10, s.latency + (Math.random() * 20 - 10))
-            })));
-        }, 2000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Initial Scan Animation
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setScanProgress(prev => {
-                if (prev >= 100) {
-                    clearInterval(timer);
-                    return 100;
-                }
-                return prev + 5;
-            });
-        }, 50);
-        return () => clearInterval(timer);
-    }, []);
-
-    return (
+return (
         <div className="animate-fade-in space-y-6">
             <div className="flex justify-between items-start bg-gray-900 border border-gray-800 p-6 rounded-2xl">
                 <div>
@@ -98,7 +59,7 @@ export const SystemConfiguration: React.FC = () => {
                     {scanProgress > 40 && <div className="text-green-500">[OK] Neural Engine (Gemini 1.5) handshake successful.</div>}
                     {scanProgress > 60 && <div className="text-green-500">[OK] SSL Certificates valid (Expires in 82 days).</div>}
                     {scanProgress > 80 && <div className="text-green-500">[OK] CDN Edge locations synced (São Paulo, Rio, Miami).</div>}
-                    {scanProgress === 100 && <div className="text-cyan-400 animate-pulse">>> SYSTEM READY. WAITING FOR COMMAND.</div>}
+                    {scanProgress === 100 && <div className="text-cyan-400 animate-pulse">{'>>'} SYSTEM READY. WAITING FOR COMMAND.</div>}
                 </div>
                 
                 {/* Scanline Effect */}
@@ -106,4 +67,3 @@ export const SystemConfiguration: React.FC = () => {
             </div>
         </div>
     );
-};
