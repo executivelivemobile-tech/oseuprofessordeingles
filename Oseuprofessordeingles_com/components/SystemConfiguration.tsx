@@ -107,4 +107,10 @@ const SystemConfiguration: React.FC = () => {
                 </div>
                 
                 {/* Scanline Effect */}
-                <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.2)_50%)] bg
+                <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.2)_50%)] bg-[length:100%_4px] pointer-events-none opacity-20"></div>
+            </div>
+        </div>
+    );
+};
+
+export default SystemConfiguration;
