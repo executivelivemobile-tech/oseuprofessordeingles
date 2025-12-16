@@ -8,7 +8,8 @@ interface ServiceMetric {
     latency: number;
 }
 
-const SystemConfiguration: React.FC = () => {
+// MUDANÇA AQUI: Adicionei "export" antes de const
+export const SystemConfiguration: React.FC = () => {
     const [scanProgress, setScanProgress] = useState(0);
     const [metrics, setMetrics] = useState<ServiceMetric[]>([
         { id: 1, name: 'OpenAI GPT-4', type: 'LLM ENGINE', status: 'ONLINE', latency: 124 },
@@ -112,5 +113,3 @@ const SystemConfiguration: React.FC = () => {
         </div>
     );
 };
-
-export default SystemConfiguration;
