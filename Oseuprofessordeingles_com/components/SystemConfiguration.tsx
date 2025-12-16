@@ -1,4 +1,48 @@
-return (
+import React, { useState, useEffect } from 'react';
+
+interface ServiceMetric {
+    id: number;
+    name: string;
+    type: string;
+    status: string;
+    latency: number;
+}
+
+const SystemConfiguration: React.FC = () => {
+    const [scanProgress, setScanProgress] = useState(0);
+    const [metrics, setMetrics] = useState<ServiceMetric[]>([
+        { id: 1, name: 'OpenAI GPT-4', type: 'LLM ENGINE', status: 'ONLINE', latency: 124 },
+        { id: 2, name: 'Deepgram Nova-2', type: 'STT ENGINE', status: 'ONLINE', latency: 45 },
+        { id: 3, name: 'ElevenLabs Turbo', type: 'TTS ENGINE', status: 'ONLINE', latency: 89 },
+        { id: 4, name: 'Supabase Database', type: 'DATA STORE', status: 'ONLINE', latency: 22 }
+    ]);
+
+    // Simula o progresso do scan ao carregar a página
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setScanProgress(prev => {
+                if (prev >= 100) {
+                    clearInterval(interval);
+                    return 100;
+                }
+                return prev + 1;
+            });
+        }, 50);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Simula pequena variação na latência para parecer "vivo"
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setMetrics(prev => prev.map(m => ({
+                ...m,
+                latency: Math.max(20, m.latency + (Math.random() > 0.5 ? 5 : -5))
+            })));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    return (
         <div className="animate-fade-in space-y-6">
             <div className="flex justify-between items-start bg-gray-900 border border-gray-800 p-6 rounded-2xl">
                 <div>
@@ -63,7 +107,4 @@ return (
                 </div>
                 
                 {/* Scanline Effect */}
-                <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.2)_50%)] bg-[length:100%_4px] pointer-events-none opacity-20"></div>
-            </div>
-        </div>
-    );
+                <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.2)_50%)] bg
