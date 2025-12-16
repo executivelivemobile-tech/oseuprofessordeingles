@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { MacleyWidget } from './components/MacleyWidget';
 import { BookingModal } from './components/BookingModal';
@@ -26,12 +25,11 @@ import { SettingsView } from './components/SettingsView';
 import { FavoritesView } from './components/FavoritesView';
 import { ReferralView } from './components/ReferralView';
 import { CertificateVerification } from './components/CertificateVerification';
-import { BlogList, BlogPostView } from './components/BlogView'; 
-import { AssessmentCenter } from './components/AssessmentCenter'; 
+import { BlogList, BlogPostView } from './components/BlogView';
+import { AssessmentCenter } from './components/AssessmentCenter';
 import { Simulator } from './components/Simulator';
 import { HomeworkCorrector } from './components/HomeworkCorrector';
 import { VocabularyVault } from './components/VocabularyVault';
-import { ContentEngine } from './components/ContentEngine'; 
 import { ToastContainer } from './components/Toast';
 import { CookieConsent } from './components/CookieConsent';
 import { DisputeModal } from './components/DisputeModal';
@@ -59,19 +57,19 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   
-  // Data States (Now fetched via service)
+  // Data States
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   
-  // Mock some initial bookings to show history functionality
+  // Mock Booking Data
   const [myBookings, setMyBookings] = useState<Booking[]>([
       { id: 'b_past_1', teacherId: 't1', teacherName: 'Sarah Connor', date: new Date('2023-10-01'), timeSlot: '10:00', price: 150, status: 'COMPLETED', reviewed: false },
       { id: 'b_past_2', teacherId: 't2', teacherName: 'James Bond', date: new Date('2023-09-15'), timeSlot: '14:00', price: 180, status: 'COMPLETED', reviewed: true }
   ]);
   const [myCourses, setMyCourses] = useState<Course[]>([]);
-  const [courseProgress, setCourseProgress] = useState<Record<string, string[]>>({}); // courseId -> [completedLessonIds]
-  
+  const [courseProgress, setCourseProgress] = useState<Record<string, string[]>>({});
+
   // Vocabulary State
   const [vocabulary, setVocabulary] = useState<VocabularyCard[]>([
       { id: 'v1', term: 'Scalability', definition: 'The capacity to be changed in size or scale.', example: 'We need to ensure the scalability of the backend.', origin: 'MANUAL', masteryLevel: 4, nextReview: new Date().toISOString() },
@@ -110,7 +108,6 @@ export default function App() {
           setTeachers(tData);
           setAllCourses(cData);
           
-          // If we have courses, prepopulate 'My Courses' for demo if empty
           if (cData.length > 0 && myCourses.length === 0) {
               setMyCourses([cData[0]]);
           }
@@ -125,7 +122,7 @@ export default function App() {
       refreshData();
   }, []);
 
-  // --- Auth & Init Effect ---
+  // --- Auth & Init Effect (AGORA COM REDIRECIONAMENTO AUTOMÁTICO!) ---
   useEffect(() => {
       const checkSession = async () => {
           setIsAuthLoading(true);
@@ -134,6 +131,17 @@ export default function App() {
               if (user) {
                   setCurrentUser(user);
                   updateUserContext(user);
+                  
+                  // 🔥 CORREÇÃO CRÍTICA AQUI 🔥
+                  // Verifica o role e redireciona automaticamente ao carregar a página
+                  const role = String(user.role).toUpperCase();
+                  
+                  if (role === 'ADMIN') {
+                      setState(prev => ({ ...prev, currentView: 'ADMIN_DASHBOARD' }));
+                  } else if (role === 'TEACHER') {
+                      setState(prev => ({ ...prev, currentView: 'TEACHER_DASHBOARD' }));
+                  }
+                  // Se for aluno, mantém na HOME ou dashboard, conforme lógica
               }
           } catch (e) {
               console.error("Session check failed", e);
@@ -161,8 +169,8 @@ export default function App() {
       selectedTeacherId: type === 'teacher' ? id : undefined,
       selectedCourseId: type === 'course' ? id : undefined,
       selectedBlogPostId: type === 'post' ? id : undefined,
-      activeBookingId: undefined, // Reset by default
-      activeFilters: {} // Clear filters on standard nav
+      activeBookingId: undefined, 
+      activeFilters: {} 
     }));
     window.scrollTo(0, 0);
   };
@@ -173,16 +181,16 @@ export default function App() {
           ...prev,
           language: newLang
       }));
-      setSystemLanguage(newLang); // Inform AI service
+      setSystemLanguage(newLang);
       addNotification('INFO', newLang === 'PT' ? 'Idioma alterado para Português' : 'Language changed to English');
   };
 
+  // --- Login Handler (CORRIGIDO PARA ACEITAR QUALQUER FORMATO DE ADMIN) ---
   const handleLogin = (user: User) => {
       setCurrentUser(user);
-      updateUserContext(user); // Inform Macley about the user
+      updateUserContext(user); 
       addNotification('SUCCESS', `Welcome back, ${user.name}!`);
       
-      // Init Mock Conversation for Demo if empty
       if (conversations.length === 0) {
           setConversations([
               {
@@ -201,12 +209,14 @@ export default function App() {
           ]);
       }
 
-      if (user.role === UserRole.TEACHER) {
+      // 🔥 Lógica de Redirecionamento Robusta 🔥
+      const role = String(user.role).toUpperCase();
+
+      if (role === 'TEACHER') {
           navigate('TEACHER_DASHBOARD');
-      } else if (user.role === UserRole.ADMIN) {
+      } else if (role === 'ADMIN') {
           navigate('ADMIN_DASHBOARD');
-      } else if (user.role === UserRole.STUDENT) {
-          // Check if onboarding is needed
+      } else if (role === 'STUDENT') {
           if (user.onboardingCompleted) {
               navigate('HOME');
           } else {
@@ -218,7 +228,7 @@ export default function App() {
   const handleLogout = async () => {
       await authService.signOut();
       setCurrentUser(null);
-      updateUserContext(null); // Clear Macley context
+      updateUserContext(null); 
       addNotification('INFO', 'Logged out successfully.');
       navigate('HOME');
   };
@@ -226,13 +236,10 @@ export default function App() {
   const handleUpdateUser = async (data: Partial<User>) => {
       if (!currentUser) return;
       try {
-          // Optimistic update
           const updatedUser = { ...currentUser, ...data };
           setCurrentUser(updatedUser);
           updateUserContext(updatedUser);
           addNotification('SUCCESS', 'Profile updated successfully.');
-          
-          // Persist
           await authService.updateProfile(currentUser.id, data);
       } catch (e) {
           addNotification('ERROR', 'Failed to save profile changes.');
@@ -248,7 +255,6 @@ export default function App() {
       addNotification('SUCCESS', "Profile Initialized. Welcome to the ecosystem.");
       navigate('STUDENT_DASHBOARD');
       
-      // Persist
       await authService.updateProfile(currentUser.id, data);
   };
 
@@ -266,7 +272,6 @@ export default function App() {
       addNotification('SUCCESS', `Level calibrated: ${level}. Recommendations updated.`);
       navigate('STUDENT_DASHBOARD');
       
-      // Persist
       await authService.updateProfile(currentUser.id, { level: updatedUser.level });
   };
 
@@ -442,7 +447,6 @@ export default function App() {
       addNotification('SUCCESS', "Review submitted. Thank you!");
   };
 
-  // Certificate Handler
   const handleCompleteCourse = (courseId: string) => {
       const course = allCourses.find(c => c.id === courseId);
       if (course && currentUser) {
@@ -466,7 +470,6 @@ export default function App() {
       });
   };
 
-  // Messaging Handlers
   const handleSendMessage = (conversationId: string, text: string) => {
       if (!currentUser) return;
       
@@ -489,7 +492,6 @@ export default function App() {
           return c;
       }));
 
-      // Simulate Reply
       setTimeout(() => {
           setConversations(prev => prev.map(c => {
               if (c.id === conversationId) {
@@ -516,7 +518,6 @@ export default function App() {
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
 
-  // Admin Actions
   const handleVerifyTeacher = (id: string) => {
       setTeachers(prev => prev.map(t => t.id === id ? { ...t, verified: true } : t));
       addNotification('SUCCESS', "Teacher verified successfully.");
@@ -527,7 +528,6 @@ export default function App() {
       addNotification('INFO', "Teacher removed.");
   };
 
-  // Dispute Actions
   const handleOpenDispute = (booking: Booking) => {
       setDisputeTargetBooking(booking);
       setIsDisputeModalOpen(true);
@@ -550,7 +550,6 @@ export default function App() {
 
       setDisputes(prev => [newDispute, ...prev]);
       
-      // Update booking status
       setMyBookings(prev => prev.map(b => 
           b.id === disputeTargetBooking.id ? { ...b, status: 'DISPUTED' } : b
       ));
@@ -566,7 +565,6 @@ export default function App() {
       addNotification('SUCCESS', `Case resolved: ${resolution}`);
   };
 
-  // Vocabulary Actions
   const handleSaveToVault = (word: Partial<VocabularyCard>) => {
       const newCard: VocabularyCard = {
           id: `v${Date.now()}`,
@@ -584,7 +582,6 @@ export default function App() {
       setVocabulary(prev => prev.map(v => v.id === id ? { ...v, masteryLevel: newLevel } : v));
   };
 
-  // AI Logic
   const handleAIAction = (action: AIAction) => {
       console.log("App received AI action:", action);
       
@@ -618,8 +615,6 @@ export default function App() {
           addNotification('INFO', `Macley: Found courses for ${action.payload.topic || 'you'}`);
       }
   };
-
-  // --- RENDER HELPERS ---
 
   if (isAuthLoading) {
       return (
