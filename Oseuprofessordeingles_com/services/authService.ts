@@ -15,7 +15,7 @@ const mapUser = (sbUser: any, profile: any): User => {
         id: sbUser.id,
         email: sbUser.email || '',
         name: profile?.full_name || sbUser.email?.split('@')[0] || 'User',
-        role: (profile?.role as UserRole) || UserRole.STUDENT,
+        role: profile?.role?.toLowerCase() || UserRole.STUDENT,
         avatarUrl: profile?.avatar_url || `https://ui-avatars.com/api/?name=${profile?.full_name || 'User'}&background=0D8ABC&color=fff`,
         level: profile?.level,
         goal: profile?.goal,
