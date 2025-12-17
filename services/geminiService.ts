@@ -1,11 +1,10 @@
+
 import { GoogleGenAI, Chat, FunctionDeclaration, Type } from "@google/genai";
 import { MACLEY_SYSTEM_INSTRUCTION } from '../constants';
-import { User, LessonPlan, HomeworkCorrection, StudentPersona, ContentTrend, DraftPost, RoadmapNode } from '../types';
-import { getEnv } from '../utils/env';
+import { User, LessonPlan, HomeworkCorrection, StudentPersona, ContentTrend, DraftPost, RoadmapNode, UserRole } from '../types';
 
 let chatSession: Chat | null = null;
-let genAI: GoogleGenAI | null = null;
-let currentUserContext: string = "";
+let currentUserContext: string = "STATE: VISITOR (No user logged in)";
 let currentLanguage: 'EN' | 'PT' = 'EN';
 
 // Tool Definitions
@@ -60,75 +59,61 @@ const searchCoursesTool: FunctionDeclaration = {
     }
 };
 
-const initializeGemini = () => {
-  const apiKey = getEnv('API_KEY') || getEnv('VITE_API_KEY');
-  if (!apiKey || apiKey.includes('YOUR_API_KEY')) {
-    console.warn("Security Alert: Invalid or missing API_KEY. AI features disabled.");
-    return null;
-  }
-  if (!genAI) {
-    genAI = new GoogleGenAI({ apiKey });
-  }
-  return genAI;
-};
-
 // Generates the full system prompt including dynamic user data and language preference
 const getFullSystemInstruction = () => {
     let instruction = MACLEY_SYSTEM_INSTRUCTION;
     
-    // Language enforcement
     if (currentLanguage === 'PT') {
-        instruction += `\n\nIMPORTANT: The user has selected PORTUGUESE (PT-BR) as their interface language. You must reply in PORTUGUESE unless explicitly asked to teach English concepts in English.`;
+        instruction += `\n\n[SYSTEM OVERRIDE] O usuário está navegando em PORTUGUÊS. Responda sempre em Português do Brasil de forma concisa.`;
     } else {
-        instruction += `\n\nIMPORTANT: The user has selected ENGLISH. Reply in English.`;
+        instruction += `\n\n[SYSTEM OVERRIDE] User is in ENGLISH mode. Reply in English.`;
     }
 
-    if (currentUserContext) {
-        instruction += `\n\nCURRENT USER CONTEXT:\n${currentUserContext}\nUse this information to personalize your greeting and recommendations.`;
-    }
+    instruction += `\n\n=== CURRENT USER CONTEXT ===\n${currentUserContext}\n=======================`;
     return instruction;
 };
 
 export const setSystemLanguage = (lang: 'EN' | 'PT') => {
     if (currentLanguage !== lang) {
         currentLanguage = lang;
-        // Reset session to apply new system instruction
-        chatSession = null;
+        chatSession = null; // Reset to apply new instruction
     }
 };
 
 export const updateUserContext = (user: User | null) => {
     if (!user) {
-        currentUserContext = "";
+        currentUserContext = "STATE: VISITOR (Anonymous/Not Logged In)";
     } else {
-        currentUserContext = `Name: ${user.name}
-Role: ${user.role}
-Level: ${user.level || 'Unknown'}
-Goal: ${user.goal || 'Unknown'}
-Max Budget: ${user.budgetMax ? 'R$ ' + user.budgetMax : 'Unknown'}
-Availability: ${user.availabilityPrefs?.join(', ') || 'Flexible'}`;
+        const isStudent = user.role === UserRole.STUDENT;
+        const isActive = isStudent && user.onboardingCompleted; 
+        const stateLabel = isActive ? "ACTIVE_STUDENT" : "VISITOR";
+
+        currentUserContext = `
+USER_ID: ${user.id}
+NAME: ${user.name}
+ROLE: ${user.role}
+STATE: ${stateLabel}
+LEVEL: ${user.level || 'Unknown'}
+GOAL: ${user.goal || 'Unknown'}
+        `.trim();
     }
-    // Force restart of chat to apply new context
     chatSession = null;
 };
 
 export const startChat = async () => {
-  const ai = initializeGemini();
-  if (!ai) return null;
-
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
-      const chat = ai.chats.create({
-        model: 'gemini-2.5-flash',
+      chatSession = ai.chats.create({
+        model: 'gemini-3-flash-preview',
         config: {
             systemInstruction: getFullSystemInstruction(),
             temperature: 0.7,
             tools: [{ functionDeclarations: [navigateTool, searchTeachersTool, searchCoursesTool] }],
         }
       });
-      chatSession = chat;
-      return chat;
+      return chatSession;
   } catch (error) {
-    console.error("Failed to start chat session", error);
+    console.error("Failed to start Macley session", error);
     return null;
   }
 };
@@ -138,336 +123,137 @@ export const sendMessageToMacley = async (message: string): Promise<{ text?: str
     await startChat();
   }
 
-  // Double check if session exists after attempt
   if (!chatSession) {
-      return { 
-          text: currentLanguage === 'PT' 
-            ? "⚠️ Sistema Offline: Chave de API não configurada ou inválida. Por favor, verifique as configurações do sistema." 
-            : "⚠️ System Offline: API Key missing or invalid. Please check system configuration." 
-      };
+      return { text: "Macley is currently offline. Please refresh." };
   }
 
   try {
     const result = await chatSession.sendMessage({ message });
-    
-    // Extract function calls if any
-    const calls = result.functionCalls;
-    
     return {
         text: result.text,
-        functionCalls: calls
+        functionCalls: result.functionCalls
     };
   } catch (error: any) {
-    console.error("Gemini Error:", error);
-    
-    // Handle specific error cases
-    if (error.message?.includes('403') || error.message?.includes('API key')) {
-        chatSession = null;
-        return { text: "Security Alert: API Key rejected. Please contact support." };
-    }
-
-    // General recovery
-    chatSession = null;
-    return { text: currentLanguage === 'PT' ? "Tive um soluço neural. Pode repetir?" : "I had a neural hiccup. Could you say that again?" };
+    console.error("Macley Neural Error:", error);
+    chatSession = null; // Clear corrupted session
+    return { 
+        text: currentLanguage === 'PT' 
+            ? "Tive um soluço neural ao processar isso. Pode repetir a pergunta?" 
+            : "I had a neural hiccup processing that. Could you repeat your question?" 
+    };
   }
 };
 
-// Helper to send tool output back to model (for multi-turn if needed)
 export const sendToolResponse = async (functionResponses: any[]) => {
     if (!chatSession) return null;
     try {
-        const result = await chatSession.sendToolResponse({ functionResponses });
+        const result = await chatSession.sendMessage({ 
+            message: functionResponses.map(fr => ({
+                functionResponse: {
+                    name: fr.name,
+                    response: fr.response,
+                    id: fr.id
+                }
+            }))
+        });
         return { text: result.text };
     } catch (e) {
         console.error("Tool response error", e);
-        return { text: "Error processing tool response." };
+        return { text: "Error syncing AI tools." };
     }
 };
 
-// --- Lesson Plan Generator ---
+// --- Specialized AI Features (Stateless) ---
+
 export const generateLessonPlan = async (topic: string, studentLevel: string, studentGoal: string): Promise<LessonPlan | null> => {
-    const ai = initializeGemini();
-    if (!ai) return null;
-
-    const prompt = `
-        You are an expert English Curriculum Developer.
-        Create a structured lesson plan for a student.
-        
-        Student Level: ${studentLevel}
-        Student Goal: ${studentGoal}
-        Lesson Topic: ${topic}
-        Language: ${currentLanguage === 'PT' ? 'Portuguese (for explanations) and English (for content)' : 'English'}
-
-        Output strict JSON with this schema:
-        {
-            "topic": "Title of the lesson",
-            "level": "CEFR Level",
-            "objectives": ["obj1", "obj2"],
-            "theory": "Markdown string of the grammar/concept explanation with examples",
-            "vocabulary": [{"term": "word", "definition": "def", "example": "sentence"}],
-            "exercises": [{"question": "text", "type": "gap-fill", "answer": "text"}],
-            "homework": "Brief assignment description",
-            "qualityScore": {
-                "clarity": number (0-100),
-                "grammar": number (0-100),
-                "engagement": number (0-100),
-                "overall": number (0-100)
-            }
-        }
-        Do not include markdown code block markers (like \`\`\`json). Just the raw JSON string.
-    `;
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Create a structured English lesson plan for a ${studentLevel} student interested in ${studentGoal}. Topic: ${topic}. Output raw JSON only.`;
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                temperature: 0.7
-            }
-        });
-
-        const text = response.text || "{}";
-        const lessonData = JSON.parse(text);
-        
-        return {
-            id: `lp_${Date.now()}`,
-            generatedAt: new Date().toISOString(),
-            ...lessonData
-        };
-
-    } catch (error) {
-        console.error("Lesson generation failed", error);
-        return null;
-    }
-};
-
-// --- Homework Corrector ---
-export const correctStudentWork = async (textInput: string): Promise<HomeworkCorrection | null> => {
-    const ai = initializeGemini();
-    if (!ai) return null;
-
-    const prompt = `
-        You are an expert English Language Teacher.
-        Analyze and correct the following student text.
-        
-        Student Text: "${textInput}"
-        Output Language: ${currentLanguage === 'PT' ? 'Portuguese' : 'English'} (Explain the feedback in this language)
-
-        Your task:
-        1. Correct grammar, spelling, and awkward phrasing.
-        2. Estimate the CEFR level of the writing (A1-C2).
-        3. Score the writing from 0-100 based on clarity and accuracy.
-        4. Detect the tone (Formal, Casual, Aggressive, etc.).
-        5. Provide specific feedback points.
-
-        Output strict JSON with this schema:
-        {
-            "original": "The original text string",
-            "corrected": "The fully corrected text string",
-            "score": number,
-            "cefrEstimate": "String (e.g. B1)",
-            "tone": "String",
-            "feedback": [
-                { "type": "GRAMMAR" | "VOCAB" | "STYLE", "message": "Explanation of the error and correction" }
-            ]
-        }
-        Do not include markdown code block markers. Just the raw JSON.
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                temperature: 0.3 // Lower temperature for more analytical/corrective task
-            }
-        });
-
-        const text = response.text || "{}";
-        return JSON.parse(text);
-
-    } catch (error) {
-        console.error("Homework correction failed", error);
-        return null;
-    }
-};
-
-// --- CONTENT ENGINE: Trend Research ---
-export const researchTrends = async (personas: StudentPersona[]): Promise<ContentTrend[]> => {
-    const ai = initializeGemini();
-    if (!ai) return [];
-
-    const personaDescriptions = personas.map(p => `${p.role} interested in ${p.interests.join(', ')}`).join('; ');
-
-    const prompt = `
-        You are a Trend Analyst for an English Learning Platform.
-        Our students fit these profiles: ${personaDescriptions}.
-        
-        Using Google Search, find 3-4 specific, CURRENT trending news topics or discussions from the last week that would be relevant to these professionals.
-        Focus on Tech, Business, and Career Development news.
-        
-        Return a JSON array of objects:
-        [
-            { "topic": "Headline", "source": "Source Name", "relevance": "Why this matters to our students" }
-        ]
-        Do not include markdown.
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                tools: [{ googleSearch: {} }], // ENABLE GOOGLE SEARCH GROUNDING
-                responseMimeType: 'application/json'
-            }
-        });
-
-        const text = response.text || "[]";
-        return JSON.parse(text);
-    } catch (error) {
-        console.error("Trend research failed", error);
-        // Fallback for demo if search fails or API key issue
-        return [
-            { topic: "The Rise of AI Agents in Software Development", source: "TechCrunch", relevance: "Relevant to Tech Leads managing AI tools." },
-            { topic: "New Remote Work Legislation in Brazil", source: "G1", relevance: "Critical for Digital Nomads and HR personas." },
-            { topic: "English as the Lingua Franca of Crypto", source: "CoinDesk", relevance: "High interest for investors and tech roles." }
-        ];
-    }
-};
-
-// --- CONTENT ENGINE: Draft Generator ---
-export const generateDraftPost = async (trend: ContentTrend, persona: StudentPersona): Promise<DraftPost | null> => {
-    const ai = initializeGemini();
-    if (!ai) return null;
-
-    const prompt = `
-        You are a Senior Content Editor.
-        Write a blog post for an English learning platform.
-        Target Language for Explanation: ${currentLanguage === 'PT' ? 'Portuguese' : 'English'}
-        
-        Target Audience: ${persona.role} who struggles with ${persona.struggles.join(', ')}.
-        Topic: ${trend.topic} (Source: ${trend.source}).
-        Context: ${trend.relevance}
-
-        The post should:
-        1. Explain the news briefly in English.
-        2. Highlight 5 key vocabulary words from the news.
-        3. Provide a practical exercise related to their struggle (e.g., how to discuss this news in a meeting).
-        4. Be engaging, modern, and helpful.
-
-        Output JSON:
-        {
-            "title": "Catchy Title",
-            "slug": "kebab-case-slug",
-            "excerpt": "Short summary",
-            "content": "HTML content (paragraphs, h3, ul)",
-            "category": "CAREER" | "TIPS" | "CULTURE",
-            "readTime": "X min read",
-            "seoKeywords": ["tag1", "tag2"],
-            "generatedReason": "Explanation of why this fits the persona"
-        }
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json'
-            }
-        });
-
-        const text = response.text || "{}";
-        const data = JSON.parse(text);
-        
-        return {
-            id: `draft_${Date.now()}`,
-            author: 'Macley (AI Editor)',
-            date: new Date().toLocaleDateString(),
-            imageUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop', // Default AI tech image
-            status: 'DRAFT',
-            targetAudience: persona.role,
-            ...data
-        };
-    } catch (error) {
-        console.error("Draft generation failed", error);
-        return null;
-    }
-};
-
-// --- VOCABULARY VAULT: Story Generator ---
-export const generateVocabularyStory = async (words: string[]): Promise<string> => {
-    const ai = initializeGemini();
-    if (!ai) return "Story generation unavailable.";
-
-    const prompt = `
-        Create a short, creative, and engaging story (max 150 words) that uses ALL of the following words correctly in context.
-        Language of Story: English.
-        
-        Words: ${words.join(', ')}
-        
-        Format: Return only the story text. Bold the target words using **word** syntax.
-        Tone: Cyberpunk / Sci-Fi / Modern Tech.
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt
-        });
-        return response.text || "Could not generate story.";
-    } catch (error) {
-        console.error("Story generation failed", error);
-        return "System offline. Unable to generate narrative.";
-    }
-};
-
-// --- ROADMAP GENERATOR ---
-export const generateLearningPath = async (level: string, goal: string): Promise<RoadmapNode[]> => {
-    const ai = initializeGemini();
-    if (!ai) return [];
-
-    const prompt = `
-        Create a personalized 5-step learning roadmap for an English student.
-        Level: ${level}
-        Goal: ${goal}
-        UI Language: ${currentLanguage === 'PT' ? 'Portuguese' : 'English'}
-
-        Each step should represent a clear milestone (e.g., "Master Past Tense", "Mock Interview", "Read first article").
-        The first step should be ACTIVE, the rest LOCKED. 
-        If the student is Advanced, make the tasks harder.
-
-        Output strict JSON array:
-        [
-            { 
-                "id": "1", 
-                "title": "Short Title", 
-                "description": "Brief description of what to do", 
-                "status": "ACTIVE" | "LOCKED", 
-                "actionType": "BOOK_CLASS" | "COURSE" | "PRACTICE" | "ASSESSMENT",
-                "actionLabel": "Button Label"
-            }
-        ]
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-pro-preview', // Pro for complex educational structuring
             contents: prompt,
             config: { responseMimeType: 'application/json' }
         });
-        const text = response.text || "[]";
-        return JSON.parse(text);
+        return { id: `lp_${Date.now()}`, generatedAt: new Date().toISOString(), ...JSON.parse(response.text || "{}") };
     } catch (error) {
-        console.error("Roadmap generation failed", error);
-        // Fallback roadmap
-        return [
-            { id: '1', title: 'Initial Assessment', description: 'Calibrate your exact CEFR level.', status: 'ACTIVE', actionType: 'ASSESSMENT', actionLabel: 'Start Test' },
-            { id: '2', title: 'Core Vocabulary', description: 'Learn 50 essential words for your goal.', status: 'LOCKED', actionType: 'PRACTICE', actionLabel: 'Open Vault' },
-            { id: '3', title: 'First Conversation', description: 'Book a 1:1 session with a teacher.', status: 'LOCKED', actionType: 'BOOK_CLASS', actionLabel: 'Find Teacher' }
-        ];
+        console.error("Lesson creation failed", error);
+        return null;
+    }
+};
+
+export const correctStudentWork = async (textInput: string): Promise<HomeworkCorrection | null> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Analyze and correct this student text. Be pedagogical. Text: "${textInput}". Output raw JSON only.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: { responseMimeType: 'application/json' }
+        });
+        return JSON.parse(response.text || "{}");
+    } catch (error) {
+        console.error("Correction failed", error);
+        return null;
+    }
+};
+
+export const researchTrends = async (personas: StudentPersona[]): Promise<ContentTrend[]> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Research 3 tech/business trends for these student profiles: ${JSON.stringify(personas)}. Output raw JSON array.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: prompt,
+            config: { tools: [{ googleSearch: {} }], responseMimeType: 'application/json' }
+        });
+        return JSON.parse(response.text || "[]");
+    } catch (error) {
+        return [];
+    }
+};
+
+export const generateDraftPost = async (trend: ContentTrend, persona: StudentPersona): Promise<DraftPost | null> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Write a blog post about ${trend.topic} for a ${persona.role}. Output raw JSON only.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: { responseMimeType: 'application/json' }
+        });
+        const data = JSON.parse(response.text || "{}");
+        return { id: `draft_${Date.now()}`, author: 'Macley (AI)', date: new Date().toLocaleDateString(), imageUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop', status: 'DRAFT', targetAudience: persona.role, ...data };
+    } catch (error) {
+        return null;
+    }
+};
+
+export const generateVocabularyStory = async (words: string[]): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Create a short sci-fi story using these words: ${words.join(', ')}. Bold the words.`;
+    try {
+        const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+        return response.text || "Story generation error.";
+    } catch (error) {
+        return "System offline.";
+    }
+};
+
+export const generateLearningPath = async (level: string, goal: string): Promise<RoadmapNode[]> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Create a 5-step learning roadmap for a ${level} student focused on ${goal}. Output raw JSON array only.`;
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: { responseMimeType: 'application/json' }
+        });
+        return JSON.parse(response.text || "[]");
+    } catch (error) {
+        return [];
     }
 };
