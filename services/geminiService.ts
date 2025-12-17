@@ -1,10 +1,9 @@
-
-import { GoogleGenAI, ChatSession, FunctionDeclaration, Type, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Chat, FunctionDeclaration, Type } from "@google/genai";
 import { MACLEY_SYSTEM_INSTRUCTION } from '../constants';
 import { User, LessonPlan, HomeworkCorrection, StudentPersona, ContentTrend, DraftPost, RoadmapNode } from '../types';
 import { getEnv } from '../utils/env';
 
-let chatSession: ChatSession | null = null;
+let chatSession: Chat | null = null;
 let genAI: GoogleGenAI | null = null;
 let currentUserContext: string = "";
 let currentLanguage: 'EN' | 'PT' = 'EN';
@@ -63,8 +62,8 @@ const searchCoursesTool: FunctionDeclaration = {
 
 const initializeGemini = () => {
   const apiKey = getEnv('API_KEY') || getEnv('VITE_API_KEY');
-  if (!apiKey) {
-    console.warn("API_KEY not found. Macley disabled.");
+  if (!apiKey || apiKey.includes('YOUR_API_KEY')) {
+    console.warn("Security Alert: Invalid or missing API_KEY. AI features disabled.");
     return null;
   }
   if (!genAI) {
@@ -139,8 +138,13 @@ export const sendMessageToMacley = async (message: string): Promise<{ text?: str
     await startChat();
   }
 
+  // Double check if session exists after attempt
   if (!chatSession) {
-      return { text: "System Error: Neural Link Disconnected (Check API Key)." };
+      return { 
+          text: currentLanguage === 'PT' 
+            ? "⚠️ Sistema Offline: Chave de API não configurada ou inválida. Por favor, verifique as configurações do sistema." 
+            : "⚠️ System Offline: API Key missing or invalid. Please check system configuration." 
+      };
   }
 
   try {
@@ -153,11 +157,18 @@ export const sendMessageToMacley = async (message: string): Promise<{ text?: str
         text: result.text,
         functionCalls: calls
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Error:", error);
-    // If error, try restarting once (often handles expired sessions or context issues)
+    
+    // Handle specific error cases
+    if (error.message?.includes('403') || error.message?.includes('API key')) {
+        chatSession = null;
+        return { text: "Security Alert: API Key rejected. Please contact support." };
+    }
+
+    // General recovery
     chatSession = null;
-    return { text: "Re-calibrating neural network... Please try again." };
+    return { text: currentLanguage === 'PT' ? "Tive um soluço neural. Pode repetir?" : "I had a neural hiccup. Could you say that again?" };
   }
 };
 

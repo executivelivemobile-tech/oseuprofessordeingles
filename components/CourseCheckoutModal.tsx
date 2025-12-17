@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Course } from '../types';
 
@@ -12,6 +13,7 @@ export const CourseCheckoutModal: React.FC<CourseCheckoutModalProps> = ({ course
   const [step, setStep] = useState<'PAYMENT' | 'PROCESSING' | 'SUCCESS'>('PAYMENT');
   const [method, setMethod] = useState<'CC' | 'PIX'>('CC');
   const [pixTimeLeft, setPixTimeLeft] = useState(600); // 10 minutes
+  const [pixCopied, setPixCopied] = useState(false); // Feedback state
   const isPT = language === 'PT';
 
   // PIX Timer
@@ -36,6 +38,13 @@ export const CourseCheckoutModal: React.FC<CourseCheckoutModalProps> = ({ course
       setTimeout(() => {
           setStep('SUCCESS');
       }, 2500);
+  };
+
+  const handleCopyPix = () => {
+      const payload = `00020126580014BR.GOV.BCB.PIX0136${course.id}5204000053039865802BR5925O Seu Professor de Ingles6009Sao Paulo62070503***6304`;
+      navigator.clipboard.writeText(payload);
+      setPixCopied(true);
+      setTimeout(() => setPixCopied(false), 2000);
   };
 
   return (
@@ -150,17 +159,32 @@ export const CourseCheckoutModal: React.FC<CourseCheckoutModalProps> = ({ course
                     {/* PIX Form */}
                     {method === 'PIX' && (
                         <div className="space-y-4 flex-1 flex flex-col items-center justify-center text-center">
-                             <div className="w-48 h-48 bg-white p-2 rounded-xl mb-4">
+                             <div className="w-48 h-48 bg-white p-2 rounded-xl mb-4 relative">
                                  {/* Mock QR Code */}
                                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=oseuprofessordeingles-${course.id}`} alt="PIX QR" className="w-full h-full" />
+                                 {/* Overlay Logo */}
+                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                     <div className="bg-white p-1 rounded-full">
+                                         <div className="w-8 h-8 bg-cyan-600 rounded-full flex items-center justify-center font-bold text-white text-xs">PIX</div>
+                                     </div>
+                                 </div>
                              </div>
                              <p className="text-white font-bold text-lg">{isPT ? 'Escaneie para pagar:' : 'Scan to pay:'} R$ {course.price},00</p>
                              <p className="text-red-400 text-sm font-mono animate-pulse">{isPT ? 'Tempo restante:' : 'Time remaining:'} {formatTime(pixTimeLeft)}</p>
                              
                              <div className="w-full relative mt-4">
-                                 <input disabled value={`00020126580014BR.GOV.BCB.PIX0136${course.id}5204000053039865802BR5925O Seu Professor de Ingles6009Sao Paulo62070503***6304`} className="w-full bg-black/50 border border-gray-700 rounded-lg pl-4 pr-12 py-3 text-gray-500 text-xs truncate" />
-                                 <button className="absolute right-2 top-2 text-cyan-400 hover:text-white p-1">
-                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                 <div className="w-full bg-black/50 border border-gray-700 rounded-lg pl-4 pr-12 py-3 text-gray-500 text-xs truncate cursor-text select-all font-mono">
+                                     00020126580014BR.GOV.BCB.PIX0136{course.id}5204000053039865802BR5925
+                                 </div>
+                                 <button 
+                                    onClick={handleCopyPix}
+                                    className={`absolute right-1 top-1 bottom-1 px-3 rounded-md transition-all flex items-center justify-center ${pixCopied ? 'bg-green-600 text-white' : 'bg-gray-800 text-cyan-400 hover:bg-gray-700'}`}
+                                 >
+                                     {pixCopied ? (
+                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                     ) : (
+                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                     )}
                                  </button>
                              </div>
                         </div>
@@ -175,7 +199,7 @@ export const CourseCheckoutModal: React.FC<CourseCheckoutModalProps> = ({ course
                                 : 'bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 shadow-cyan-900/30'
                             }`}
                         >
-                            {method === 'CC' ? `${isPT ? 'Pagar' : 'Pay'} R$ ${course.price},00` : (isPT ? 'Já paguei via PIX' : 'I have paid via PIX')}
+                            {method === 'CC' ? `${isPT ? 'Pagar' : 'Pay'} R$ ${course.price},00` : (isPT ? 'Já realizei o PIX' : 'I have paid via PIX')}
                         </button>
                         <p className="text-center text-xs text-gray-500 mt-4">
                             {isPT ? 'Ao clicar acima, você concorda com nossos' : 'By clicking the button above, you agree to our'} <span className="underline cursor-pointer">{isPT ? 'Termos de Serviço' : 'Terms of Service'}</span>.

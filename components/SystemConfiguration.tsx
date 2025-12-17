@@ -98,7 +98,8 @@ export const SystemConfiguration: React.FC = () => {
                     {scanProgress > 40 && <div className="text-green-500">[OK] Neural Engine (Gemini 1.5) handshake successful.</div>}
                     {scanProgress > 60 && <div className="text-green-500">[OK] SSL Certificates valid (Expires in 82 days).</div>}
                     {scanProgress > 80 && <div className="text-green-500">[OK] CDN Edge locations synced (São Paulo, Rio, Miami).</div>}
-                    {scanProgress === 100 && <div className="text-cyan-400 animate-pulse">>> SYSTEM READY. WAITING FOR COMMAND.</div>}
+                    {scanProgress === 100 && <div className="text-cyan-400 animate-pulse">{">> SYSTEM READY. WAITING FOR COMMAND."}</div>}
+
                 </div>
                 
                 {/* Scanline Effect */}

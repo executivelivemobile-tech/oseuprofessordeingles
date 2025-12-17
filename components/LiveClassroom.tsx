@@ -17,6 +17,10 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({ booking, teacher, 
   const [activeTab, setActiveTab] = useState<'CHAT' | 'NOTES' | 'AI_HINTS'>('AI_HINTS');
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [timer, setTimer] = useState(3000); // 50 minutes in seconds
+  
+  // External Link Handling (For immediate commercial use without complex WebRTC server)
+  // In a real app, this link would come from the booking.meetingUrl or teacher.preferences
+  const EXTERNAL_MEETING_LINK = `https://meet.google.com/new`; 
 
   useEffect(() => {
     let interval: any;
@@ -34,6 +38,10 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({ booking, teacher, 
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const handleLaunchExternal = () => {
+      window.open(EXTERNAL_MEETING_LINK, '_blank');
+  };
+
   if (sessionState === 'CHECK') {
       return <TechCheck onJoin={() => setSessionState('LIVE')} onCancel={onEndCall} />;
   }
@@ -42,15 +50,16 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({ booking, teacher, 
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
       {/* HUD Header */}
       <div className="absolute top-0 left-0 right-0 p-4 z-30 flex justify-between items-start pointer-events-none">
-        <div className="bg-black/40 backdrop-blur-md border border-cyan-500/30 px-4 py-2 rounded-lg flex items-center gap-3">
+        <div className="bg-black/40 backdrop-blur-md border border-cyan-500/30 px-4 py-2 rounded-lg flex items-center gap-3 pointer-events-auto">
            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
            <span className="text-red-500 text-xs font-bold tracking-widest uppercase">REC</span>
            <div className="h-4 w-px bg-gray-600"></div>
            <span className="text-cyan-400 font-mono text-sm">{formatTime(timer)}</span>
         </div>
         
-        <div className="bg-black/40 backdrop-blur-md border border-gray-700 px-4 py-2 rounded-lg text-xs text-gray-400 font-mono">
-            CONNECTION: STABLE <span className="text-green-500">|||||</span>
+        <div className="bg-black/40 backdrop-blur-md border border-gray-700 px-4 py-2 rounded-lg text-xs text-gray-400 font-mono flex items-center gap-2 pointer-events-auto">
+            <span>MODE: HYBRID</span>
+            <span className="w-2 h-2 rounded-full bg-green-500"></span>
         </div>
       </div>
 
@@ -58,27 +67,30 @@ export const LiveClassroom: React.FC<LiveClassroomProps> = ({ booking, teacher, 
           
           {/* Main Video Stage */}
           <div className="flex-1 relative bg-gray-900 flex items-center justify-center overflow-hidden group">
-              {/* Teacher Video (Mock) */}
-              <div className="absolute inset-0">
-                  <img 
-                    src={teacher?.photoUrl || 'https://via.placeholder.com/800'} 
-                    alt="Teacher" 
-                    className="w-full h-full object-cover opacity-80"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20"></div>
+              
+              {/* Fallback / External Link UI */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-10">
+                  <div className="bg-black/50 p-8 rounded-2xl border border-gray-700 backdrop-blur text-center max-w-md">
+                      <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <svg className="w-10 h-10 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                      </div>
+                      <h3 className="text-2xl font-bold text-white mb-2">Ready to Connect?</h3>
+                      <p className="text-gray-400 mb-6">
+                          For the best video quality, the teacher has requested to use an external secure line.
+                      </p>
+                      <button 
+                        onClick={handleLaunchExternal}
+                        className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.4)] transition-all flex items-center justify-center gap-2 mb-4"
+                      >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          Launch Meeting Room
+                      </button>
+                      <p className="text-xs text-gray-600">Don't close this tab. The timer is running here.</p>
+                  </div>
               </div>
 
-              {/* Collaborative Whiteboard Overlay */}
+              {/* Collaborative Whiteboard Overlay (Can be toggled on top) */}
               {showWhiteboard && <Whiteboard />}
-
-              {/* Sound Wave Visualizer (Mock - Only if whiteboard off for visibility) */}
-              {!showWhiteboard && (
-                  <div className="absolute bottom-24 left-1/2 -translate-x-1/2 flex items-end gap-1 h-12">
-                      {[...Array(10)].map((_, i) => (
-                          <div key={i} className="w-1 bg-cyan-400 animate-pulse" style={{ height: `${Math.random() * 100}%`, animationDuration: `${0.5 + Math.random()}s` }}></div>
-                      ))}
-                  </div>
-              )}
 
               {/* Teacher Name Label */}
               <div className="absolute bottom-6 left-6 bg-black/60 backdrop-blur border border-gray-600 px-4 py-2 rounded-lg z-20">

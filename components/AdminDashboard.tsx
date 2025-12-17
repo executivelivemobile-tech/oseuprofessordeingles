@@ -25,6 +25,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CONTENT_ENGINE' | 'DISPUTES' | 'SYSTEM' | 'DATABASE'>('OVERVIEW');
   const [isSeeding, setIsSeeding] = useState(false);
+  const [showSql, setShowSql] = useState(false);
   
   const pendingTeachers = teachers.filter(t => !t.verified);
   const activeTeachers = teachers.filter(t => t.verified);
@@ -40,7 +41,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               alert("Banco de Dados Sincronizado com Sucesso! (Teachers & Courses tables populated)");
               if (onRefreshData) onRefreshData(); // Reload app data
           } else {
-              alert("Erro ao sincronizar. Verifique se você criou as tabelas no Supabase SQL Editor.");
+              alert("Erro ao sincronizar. Verifique se você criou as tabelas no Supabase SQL Editor. Use o botão 'Generate SQL' abaixo.");
           }
       } catch (e) {
           alert("Erro de conexão. Verifique o console.");
@@ -49,6 +50,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           setIsSeeding(false);
       }
   };
+
+  const SCHEMA_SQL = `
+-- USER PROFILES
+create table profiles (
+  id uuid references auth.users not null primary key,
+  full_name text,
+  avatar_url text,
+  role text check (role in ('STUDENT', 'TEACHER', 'ADMIN')),
+  level text,
+  goal text,
+  onboarding_completed boolean default false,
+  teacher_id text
+);
+
+-- TEACHERS
+create table teachers (
+  id text primary key,
+  name text not null,
+  photo_url text,
+  niche text[],
+  location text,
+  accent text,
+  rating numeric,
+  hourly_rate numeric,
+  bio text,
+  verified boolean default false,
+  available boolean default true
+);
+
+-- COURSES
+create table courses (
+  id text primary key,
+  title text not null,
+  instructor_id text,
+  price numeric,
+  level text,
+  category text,
+  thumbnail_url text,
+  description text
+);
+
+-- POLICIES (RLS)
+alter table profiles enable row level security;
+alter table teachers enable row level security;
+alter table courses enable row level security;
+
+create policy "Public profiles are viewable by everyone." on profiles for select using ( true );
+create policy "Users can insert their own profile." on profiles for insert with check ( auth.uid() = id );
+create policy "Users can update own profile." on profiles for update using ( auth.uid() = id );
+
+create policy "Teachers are viewable by everyone." on teachers for select using ( true );
+create policy "Courses are viewable by everyone." on courses for select using ( true );
+`;
 
   return (
     <div className="min-h-screen pt-24 px-4 max-w-7xl mx-auto pb-20">
@@ -104,12 +158,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 animate-fade-in">
               <h2 className="text-2xl font-bold text-white mb-4">Database Operations</h2>
               <div className="grid md:grid-cols-2 gap-8">
+                  {/* Setup Guide */}
                   <div className="bg-black/30 p-6 rounded-xl border border-gray-700">
-                      <h3 className="text-lg font-bold text-white mb-2">Initial Setup (Seeding)</h3>
+                      <h3 className="text-lg font-bold text-white mb-2">1. Setup Supabase Schema</h3>
+                      <p className="text-gray-400 text-sm mb-6">
+                          Before seeding data, you must create the tables in your Supabase project.
+                      </p>
+                      <button 
+                        onClick={() => setShowSql(!showSql)}
+                        className="w-full bg-cyan-900/50 hover:bg-cyan-900 text-cyan-400 border border-cyan-700 font-bold py-3 rounded-lg transition-all mb-4"
+                      >
+                          {showSql ? 'Hide SQL' : 'View SQL Schema Code'}
+                      </button>
+                      
+                      {showSql && (
+                          <div className="relative">
+                              <textarea 
+                                readOnly 
+                                value={SCHEMA_SQL}
+                                className="w-full h-64 bg-black border border-gray-800 rounded p-4 text-xs font-mono text-green-400 focus:outline-none mb-2"
+                              />
+                              <button 
+                                onClick={() => navigator.clipboard.writeText(SCHEMA_SQL)}
+                                className="absolute top-2 right-2 text-xs bg-gray-800 text-white px-2 py-1 rounded hover:bg-gray-700"
+                              >
+                                  Copy
+                              </button>
+                          </div>
+                      )}
+                  </div>
+
+                  {/* Seed Action */}
+                  <div className="bg-black/30 p-6 rounded-xl border border-gray-700">
+                      <h3 className="text-lg font-bold text-white mb-2">2. Inject Initial Data</h3>
                       <p className="text-gray-400 text-sm mb-6">
                           Populate the remote Supabase database with the local Mock Data. 
                           <br/>
-                          <span className="text-yellow-500">⚠️ Only use this if the remote tables are empty.</span>
+                          <span className="text-yellow-500">⚠️ Only use this after running the SQL schema.</span>
                       </p>
                       <button 
                         onClick={handleSeedDatabase}
@@ -118,13 +203,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       >
                           {isSeeding ? 'Syncing...' : 'Inject Mock Data to DB'}
                           {!isSeeding && <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4-4m4 4V4" /></svg>}
-                      </button>
-                  </div>
-                  <div className="bg-black/30 p-6 rounded-xl border border-gray-700 opacity-50">
-                      <h3 className="text-lg font-bold text-white mb-2">Reset Tables</h3>
-                      <p className="text-gray-400 text-sm mb-6">Wipe all data from Teachers and Courses tables. Irreversible.</p>
-                      <button disabled className="w-full bg-red-900/50 text-gray-400 font-bold py-3 rounded-lg cursor-not-allowed">
-                          Locked (Safety)
                       </button>
                   </div>
               </div>
