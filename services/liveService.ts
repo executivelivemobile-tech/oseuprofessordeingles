@@ -25,64 +25,59 @@ let currentSessionPromise: Promise<any> | null = null;
 export const liveService = {
     
     async connect(onAudioData: (base64: string) => void, onToolCall: (toolName: string, args: any) => void) {
-        // Must use process.env.API_KEY directly as per instructions
+        // Use process.env.API_KEY directly as required by specialized instructions
         const apiKey = process.env.API_KEY;
         if (!apiKey) {
-            console.error("Security Alert: process.env.API_KEY is missing.");
+            console.error("Critical Error: process.env.API_KEY is not defined in this environment.");
             return;
         }
 
         const ai = new GoogleGenAI({ apiKey });
         
-        // Initialize Audio Streamer
+        // Initialize Audio Streamer with the callback to send data to Gemini
         streamer = new AudioStreamer((base64Input) => {
-            // CRITICAL: Solely rely on sessionPromise resolves
             if (currentSessionPromise) {
                 currentSessionPromise.then((session) => {
+                    // Send realtime input only after session is resolved
                     session.sendRealtimeInput({
                         media: {
                             data: base64Input,
                             mimeType: "audio/pcm;rate=16000"
                         }
                     });
-                });
+                }).catch(err => console.error("Realtime input failed", err));
             }
         });
 
-        // Start Mic Recording
-        await streamer.startRecording();
-
-        // Connect to Live API
+        // Initiate connection promise FIRST
         currentSessionPromise = ai.live.connect({
             model: 'gemini-2.5-flash-native-audio-preview-09-2025',
             config: {
                 responseModalities: [Modality.AUDIO],
-                systemInstruction: MACLEY_SYSTEM_INSTRUCTION + "\n\nCRITICAL: Keep your spoken responses very brief (1-2 sentences). You are a voice assistant. Do not use markdown or complex lists.",
+                systemInstruction: MACLEY_SYSTEM_INSTRUCTION + "\n\nVOICE MODE RULES: You are speaking via audio. Keep responses under 20 words. No lists, no markdown. Be extremely conversational and helpful.",
                 tools: [{ functionDeclarations: [navigateTool] }]
             },
             callbacks: {
                 onopen: () => {
-                    console.log("Macley Live Link Established");
+                    console.log("Neural Link Active");
                 },
                 onmessage: async (message: LiveServerMessage) => {
-                    // 1. Process Voice Output
+                    // 1. Process Model Voice
                     const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
                     if (audioData) {
                         streamer?.playAudioChunk(audioData);
                         onAudioData(audioData);
                     }
 
-                    // 2. Handle User Interruptions
+                    // 2. Handle Interruption (User started speaking)
                     if (message.serverContent?.interrupted) {
                         streamer?.stopPlayback();
                     }
 
-                    // 3. Process Tool Calls
+                    // 3. Tool Calls
                     if (message.toolCall) {
                         for (const fc of message.toolCall.functionCalls) {
                             onToolCall(fc.name, fc.args);
-                            
-                            // Acknowledge Tool Execution back to Gemini
                             currentSessionPromise?.then(session => {
                                 session.sendToolResponse({
                                     functionResponses: [{
@@ -95,14 +90,13 @@ export const liveService = {
                         }
                     }
                 },
-                onclose: () => {
-                    console.log("Macley Live Link Severed");
-                },
-                onerror: (e) => {
-                    console.error("Live Neural Error:", e);
-                }
+                onclose: () => console.log("Neural Link Terminated"),
+                onerror: (e) => console.error("Neural Link Error", e)
             }
         });
+
+        // Start recording only AFTER the promise is initialized to avoid null reference
+        await streamer.startRecording();
 
         return await currentSessionPromise;
     },
