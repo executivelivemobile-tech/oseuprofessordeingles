@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { analyzeStudentCorpus } from '../services/googleDocsService';
 import { researchTrends, generateDraftPost } from '../services/geminiService';
 import { StudentPersona, ContentTrend, DraftPost } from '../types';
+import { dataService } from '../services/dataService';
 
 export const ContentEngine: React.FC = () => {
     const [step, setStep] = useState<'IDLE' | 'SCANNING' | 'RESEARCHING' | 'GENERATING' | 'DONE'>('IDLE');
@@ -10,6 +11,7 @@ export const ContentEngine: React.FC = () => {
     const [trends, setTrends] = useState<ContentTrend[]>([]);
     const [drafts, setDrafts] = useState<DraftPost[]>([]);
     const [logs, setLogs] = useState<string[]>([]);
+    const [isPublishing, setIsPublishing] = useState<string | null>(null);
 
     const addLog = (msg: string) => setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
@@ -20,51 +22,59 @@ export const ContentEngine: React.FC = () => {
         setTrends([]);
         setDrafts([]);
 
-        // 1. Analyze Corpus
-        addLog("Initiating Neural Scan of Student Documents...");
+        addLog("Iniciando varredura neural em documentos de alunos...");
         const detectedPersonas = await analyzeStudentCorpus();
         setPersonas(detectedPersonas);
-        addLog(`Identified ${detectedPersonas.length} distinct student personas.`);
+        addLog(`Identificados ${detectedPersonas.length} clusters de interesse.`);
         
-        // 2. Research Trends
         setStep('RESEARCHING');
-        addLog("Connecting to Global News Stream (Google Search Grounding)...");
+        addLog("Conectando ao Grounding do Google Search...");
         const detectedTrends = await researchTrends(detectedPersonas);
         setTrends(detectedTrends);
-        addLog(`Detected ${detectedTrends.length} relevant trending topics.`);
+        addLog(`Detectadas ${detectedTrends.length} tendências relevantes hoje.`);
 
-        // 3. Generate Drafts
         setStep('GENERATING');
-        addLog("Synthesizing content...");
+        addLog("Sintetizando conteúdo pedagógico-comercial...");
         
         const newDrafts: DraftPost[] = [];
-        
-        // Match trends to personas efficiently
-        for (let i = 0; i < Math.min(3, detectedTrends.length); i++) {
+        for (let i = 0; i < Math.min(2, detectedTrends.length); i++) {
             const trend = detectedTrends[i];
-            const targetPersona = personas[i % personas.length]; // Rotate personas
-            
-            addLog(`Drafting: "${trend.topic}" for ${targetPersona.role}...`);
+            const targetPersona = personas[i % personas.length];
+            addLog(`Redigindo: "${trend.topic}" para ${targetPersona.role}...`);
             const draft = await generateDraftPost(trend, targetPersona);
-            if (draft) {
-                newDrafts.push(draft);
-            }
+            if (draft) newDrafts.push(draft);
         }
         
         setDrafts(newDrafts);
         setStep('DONE');
-        addLog("Content Cycle Complete. Drafts ready for review.");
+        addLog("Ciclo completo. Aguardando revisão humana para publicação.");
+    };
+
+    const handleApproveAndPublish = async (draft: DraftPost) => {
+        setIsPublishing(draft.id);
+        try {
+            await dataService.publishGeneratedPost({
+                ...draft,
+                status: 'PUBLISHED'
+            });
+            setDrafts(prev => prev.filter(d => d.id !== draft.id));
+            addLog(`Post "${draft.title}" publicado com sucesso no Feed global.`);
+        } catch (e) {
+            addLog(`Erro ao publicar post.`);
+        } finally {
+            setIsPublishing(null);
+        }
     };
 
     return (
-        <div className="min-h-screen pt-24 px-4 max-w-7xl mx-auto pb-20">
-            <div className="flex justify-between items-center mb-8">
+        <div className="animate-fade-in">
+            <div className="flex justify-between items-center mb-8 bg-gray-900/50 p-6 rounded-2xl border border-gray-800">
                 <div>
                     <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                         <span className="w-4 h-4 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.8)]"></span>
-                        Neural Content Engine
+                        Neural Content Engine v2.1
                     </h1>
-                    <p className="text-gray-400 mt-1">Autonomous content generation based on student context & real-time trends.</p>
+                    <p className="text-gray-400 mt-1">Gerador autônomo de tráfego orgânico baseado em contexto real de alunos.</p>
                 </div>
                 <button 
                     onClick={runEngine}
@@ -74,65 +84,41 @@ export const ContentEngine: React.FC = () => {
                     {step === 'IDLE' || step === 'DONE' ? (
                         <>
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                            Run Auto-Pilot
+                            Executar Auto-Pilot
                         </>
                     ) : (
                         <>
                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Processing...
+                            Sincronizando Tendências...
                         </>
                     )}
                 </button>
             </div>
 
             <div className="grid lg:grid-cols-3 gap-8">
-                
-                {/* Left Column: Live Terminal */}
                 <div className="lg:col-span-1 space-y-6">
-                    {/* Status Monitor */}
-                    <div className="bg-black border border-gray-800 rounded-2xl p-6 font-mono text-sm h-64 overflow-y-auto shadow-inner custom-scrollbar">
-                        <div className="text-green-500 mb-2 font-bold">SYSTEM STATUS: {step}</div>
+                    <div className="bg-black border border-gray-800 rounded-2xl p-6 font-mono text-sm h-80 overflow-y-auto shadow-inner">
+                        <div className="text-green-500 mb-2 font-bold uppercase tracking-tighter">>>> MACLEY_CORE_LOG</div>
                         {logs.map((log, i) => (
-                            <div key={i} className="text-gray-400 mb-1 border-l-2 border-gray-800 pl-2">{log}</div>
+                            <div key={i} className="text-gray-400 mb-1 border-l-2 border-gray-800 pl-2 leading-tight py-1">{log}</div>
                         ))}
-                        {step === 'SCANNING' && <div className="text-cyan-500 animate-pulse">Reading docs...</div>}
+                        {(step === 'SCANNING' || step === 'RESEARCHING' || step === 'GENERATING') && <div className="text-cyan-500 animate-pulse mt-2">Processando...</div>}
                     </div>
 
-                    {/* Personas Detected */}
                     {personas.length > 0 && (
-                        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 animate-fade-in">
-                            <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                                <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                Persona Clusters
+                        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 animate-slide-up">
+                            <h3 className="text-white font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest text-gray-500">
+                                Segmentação Detectada
                             </h3>
                             <div className="space-y-3">
                                 {personas.map((p, i) => (
                                     <div key={i} className="bg-gray-800/50 p-3 rounded-lg border border-gray-700">
                                         <div className="flex justify-between items-start">
-                                            <span className="text-white font-bold text-sm">{p.role}</span>
-                                            <span className="bg-purple-900/30 text-purple-400 text-xs px-2 py-0.5 rounded">{p.count} Students</span>
+                                            <span className="text-white font-bold text-xs">{p.role}</span>
+                                            <span className="bg-cyan-900/30 text-cyan-400 text-[10px] px-2 py-0.5 rounded border border-cyan-800">{p.count} Alunos</span>
                                         </div>
-                                        <p className="text-xs text-gray-500 mt-1">Interests: {p.interests.slice(0, 2).join(', ')}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Trends Detected */}
-                    {trends.length > 0 && (
-                        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 animate-fade-in">
-                            <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                                <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                                Hot Topics (Google Grounding)
-                            </h3>
-                            <div className="space-y-3">
-                                {trends.map((t, i) => (
-                                    <div key={i} className="bg-gray-800/50 p-3 rounded-lg border border-gray-700">
-                                        <p className="text-white font-bold text-sm line-clamp-1">{t.topic}</p>
-                                        <div className="flex justify-between mt-1">
-                                            <span className="text-xs text-gray-500">{t.source}</span>
-                                            <span className="text-[10px] text-cyan-400">High Relevance</span>
+                                        <div className="flex flex-wrap gap-1 mt-2">
+                                            {p.interests.slice(0,2).map(int => <span key={int} className="text-[9px] text-gray-500">#{int}</span>)}
                                         </div>
                                     </div>
                                 ))}
@@ -141,46 +127,47 @@ export const ContentEngine: React.FC = () => {
                     )}
                 </div>
 
-                {/* Right Column: Generated Queue */}
                 <div className="lg:col-span-2">
-                    <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 h-full min-h-[600px]">
-                        <h2 className="text-xl font-bold text-white mb-6">Generated Content Queue</h2>
+                    <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 h-full min-h-[500px]">
+                        <h2 className="text-xl font-bold text-white mb-6 font-orbitron">Fila de Rascunhos Estratégicos</h2>
                         
                         {drafts.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-96 text-gray-500 border border-gray-800 border-dashed rounded-xl">
-                                <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                                    <svg className="w-10 h-10 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                                </div>
-                                <p>No drafts generated yet. Start the engine.</p>
+                            <div className="flex flex-col items-center justify-center h-80 text-gray-500 border border-gray-800 border-dashed rounded-xl bg-black/20">
+                                <p className="font-mono text-xs">Waiting for initialization...</p>
                             </div>
                         ) : (
                             <div className="space-y-6">
                                 {drafts.map((draft, idx) => (
-                                    <div key={idx} className="bg-black/40 border border-gray-700 rounded-xl overflow-hidden flex flex-col md:flex-row animate-slide-up" style={{ animationDelay: `${idx * 200}ms` }}>
-                                        <div className="w-full md:w-48 h-32 md:h-auto relative">
+                                    <div key={idx} className="bg-gray-800/40 border border-gray-700 rounded-2xl overflow-hidden flex flex-col md:flex-row transition-all hover:border-cyan-500/30">
+                                        <div className="w-full md:w-48 h-32 md:h-auto relative shrink-0">
                                             <img src={draft.imageUrl} className="w-full h-full object-cover" alt="Draft" />
-                                            <div className="absolute top-2 left-2 bg-yellow-600 text-white text-[10px] font-bold px-2 py-1 rounded">
-                                                {draft.status}
+                                            <div className="absolute top-2 left-2 bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-lg uppercase">
+                                                AI Draft
                                             </div>
                                         </div>
-                                        <div className="p-5 flex-1">
+                                        <div className="p-5 flex-1 flex flex-col">
                                             <div className="flex justify-between items-start mb-2">
-                                                <div>
-                                                    <span className="text-cyan-400 text-xs font-bold uppercase tracking-wider">{draft.category}</span>
-                                                    <h3 className="text-lg font-bold text-white mt-1">{draft.title}</h3>
-                                                </div>
-                                                <span className="text-gray-500 text-xs bg-gray-800 px-2 py-1 rounded">Target: {draft.targetAudience}</span>
+                                                <h3 className="text-lg font-bold text-white leading-tight">{draft.title}</h3>
+                                                <span className="text-[10px] text-gray-500 font-mono">SEO: {draft.seoKeywords.slice(0,2).join(', ')}</span>
                                             </div>
-                                            <p className="text-gray-400 text-sm mb-3 line-clamp-2">{draft.excerpt}</p>
+                                            <p className="text-gray-400 text-sm mb-4 line-clamp-2 italic">"{draft.excerpt}"</p>
                                             
-                                            <div className="bg-gray-800/50 p-2 rounded text-xs text-gray-500 mb-4 border border-gray-700/50">
-                                                <span className="font-bold text-gray-400">AI Logic: </span>
-                                                {draft.generatedReason}
-                                            </div>
-
-                                            <div className="flex gap-2 justify-end">
-                                                <button className="text-xs text-gray-400 hover:text-white px-3 py-2">Edit</button>
-                                                <button className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-lg">Approve & Publish</button>
+                                            <div className="mt-auto pt-4 border-t border-gray-800 flex justify-between items-center">
+                                                <div className="flex gap-2">
+                                                    <span className="text-[10px] bg-gray-900 px-2 py-1 rounded text-gray-500">Público: {draft.targetAudience}</span>
+                                                    <span className="text-[10px] bg-gray-900 px-2 py-1 rounded text-gray-500">{draft.readTime}</span>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button className="text-xs text-gray-500 hover:text-white px-3 py-2 transition-colors">Editar Conteúdo</button>
+                                                    <button 
+                                                        onClick={() => handleApproveAndPublish(draft)}
+                                                        disabled={isPublishing === draft.id}
+                                                        className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-xs font-bold px-5 py-2.5 rounded-lg shadow-lg shadow-green-900/20 transition-all flex items-center gap-2"
+                                                    >
+                                                        {isPublishing === draft.id ? 'Publicando...' : 'Aprovar e Publicar'}
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

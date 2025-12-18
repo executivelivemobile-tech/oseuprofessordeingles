@@ -1,10 +1,11 @@
 
-import React, { useState } from 'react';
-import { Teacher, Dispute } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Teacher, Dispute, Transaction, PercentageRule, AuditLog, UserRole } from '../types';
 import { ContentEngine } from './ContentEngine';
 import { AdminDisputeCenter } from './AdminDisputeCenter';
 import { SystemConfiguration } from './SystemConfiguration';
 import { dataService } from '../services/dataService';
+import { pricingService } from '../services/pricingService';
 
 interface AdminDashboardProps {
   teachers: Teacher[];
@@ -12,7 +13,7 @@ interface AdminDashboardProps {
   onDeleteTeacher: (id: string) => void;
   disputes?: Dispute[]; 
   onResolveDispute?: (id: string, res: any) => void; 
-  onRefreshData?: () => void; // New prop to trigger App refresh
+  onRefreshData?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
@@ -23,276 +24,219 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     onResolveDispute,
     onRefreshData
 }) => {
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'CONTENT_ENGINE' | 'DISPUTES' | 'SYSTEM' | 'DATABASE'>('OVERVIEW');
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [showSql, setShowSql] = useState(false);
-  
-  const pendingTeachers = teachers.filter(t => !t.verified);
-  const activeTeachers = teachers.filter(t => t.verified);
-  const openDisputeCount = disputes.filter(d => d.status === 'OPEN').length;
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PRICING' | 'FINANCIALS' | 'LOGS' | 'CONTENT' | 'SYSTEM'>('OVERVIEW');
+  const [rules, setRules] = useState<PercentageRule[]>(pricingService.getRules());
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([
+      { id: 'l1', adminId: 'm1', adminName: 'Master Admin', action: 'UPDATE_FEE_GLOBAL', targetId: 'GLOBAL', changes: { before: 20, after: 15 }, timestamp: '2023-10-25 10:00', severity: 'CRITICAL' },
+      { id: 'l2', adminId: 'm1', adminName: 'Master Admin', action: 'VERIFY_TEACHER', targetId: 't1', changes: { before: false, after: true }, timestamp: '2023-10-25 11:30', severity: 'INFO' },
+  ]);
 
-  const handleSeedDatabase = async () => {
-      if (!confirm("Isso enviará os dados de teste (MOCK) para o banco de dados Supabase real. Continuar?")) return;
+  const [simulatedPrice, setSimulatedPrice] = useState(100);
+  const [selectedTeacherId, setSelectedTeacherId] = useState(teachers[0]?.id || '');
+
+  const splitPreview = pricingService.calculateSplit(simulatedPrice, selectedTeacherId);
+
+  const handleSaveRule = (rule: Partial<PercentageRule>) => {
+      const saved = pricingService.saveRule('root_master_01', rule);
+      setRules(pricingService.getRules());
       
-      setIsSeeding(true);
-      try {
-          const res = await dataService.seedDatabase();
-          if (res.success) {
-              alert("Banco de Dados Sincronizado com Sucesso! (Teachers & Courses tables populated)");
-              if (onRefreshData) onRefreshData(); // Reload app data
-          } else {
-              alert("Erro ao sincronizar. Verifique se você criou as tabelas no Supabase SQL Editor. Use o botão 'Generate SQL' abaixo.");
-          }
-      } catch (e) {
-          alert("Erro de conexão. Verifique o console.");
-          console.error(e);
-      } finally {
-          setIsSeeding(false);
-      }
+      // Log de Auditoria
+      const log: AuditLog = {
+          id: `log_${Date.now()}`,
+          adminId: 'root_master_01',
+          adminName: 'ADMIN MASTER',
+          action: 'SAVE_RULE',
+          targetId: rule.scope || 'GLOBAL',
+          changes: { before: 'N/A', after: saved },
+          timestamp: new Date().toLocaleString(),
+          severity: 'CRITICAL'
+      };
+      setAuditLogs(prev => [log, ...prev]);
   };
 
-  const SCHEMA_SQL = `
--- USER PROFILES
-create table profiles (
-  id uuid references auth.users not null primary key,
-  full_name text,
-  avatar_url text,
-  role text check (role in ('STUDENT', 'TEACHER', 'ADMIN')),
-  level text,
-  goal text,
-  onboarding_completed boolean default false,
-  teacher_id text
-);
-
--- TEACHERS
-create table teachers (
-  id text primary key,
-  name text not null,
-  photo_url text,
-  niche text[],
-  location text,
-  accent text,
-  rating numeric,
-  hourly_rate numeric,
-  bio text,
-  verified boolean default false,
-  available boolean default true
-);
-
--- COURSES
-create table courses (
-  id text primary key,
-  title text not null,
-  instructor_id text,
-  price numeric,
-  level text,
-  category text,
-  thumbnail_url text,
-  description text
-);
-
--- POLICIES (RLS)
-alter table profiles enable row level security;
-alter table teachers enable row level security;
-alter table courses enable row level security;
-
-create policy "Public profiles are viewable by everyone." on profiles for select using ( true );
-create policy "Users can insert their own profile." on profiles for insert with check ( auth.uid() = id );
-create policy "Users can update own profile." on profiles for update using ( auth.uid() = id );
-
-create policy "Teachers are viewable by everyone." on teachers for select using ( true );
-create policy "Courses are viewable by everyone." on courses for select using ( true );
-`;
-
   return (
-    <div className="min-h-screen pt-24 px-4 max-w-7xl mx-auto pb-20">
-      <div className="flex flex-col md:flex-row justify-between items-end mb-8">
-          <h1 className="text-4xl font-bold text-white">Admin Control Tower</h1>
-          <div className="flex gap-2 mt-4 md:mt-0 overflow-x-auto pb-2 md:pb-0">
-              <button 
-                onClick={() => setActiveTab('OVERVIEW')}
-                className={`px-4 py-2 rounded-lg font-bold text-sm whitespace-nowrap ${activeTab === 'OVERVIEW' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
-              >
-                  Overview
-              </button>
-              <button 
-                onClick={() => setActiveTab('DISPUTES')}
-                className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'DISPUTES' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'}`}
-              >
-                  Disputes 
-                  {openDisputeCount > 0 && <span className="bg-white text-red-600 text-[10px] px-1.5 rounded font-bold">{openDisputeCount}</span>}
-              </button>
-              <button 
-                onClick={() => setActiveTab('CONTENT_ENGINE')}
-                className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'CONTENT_ENGINE' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
-              >
-                  Content Engine <span className="bg-purple-600 text-[10px] px-1.5 rounded text-white">AI</span>
-              </button>
-              <button 
-                onClick={() => setActiveTab('DATABASE')}
-                className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'DATABASE' ? 'bg-green-700 text-white' : 'text-gray-400 hover:text-white'}`}
-              >
-                  Database
-              </button>
-              <button 
-                onClick={() => setActiveTab('SYSTEM')}
-                className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 whitespace-nowrap ${activeTab === 'SYSTEM' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
-              >
-                  System
-              </button>
+    <div className="min-h-screen pt-24 px-4 max-w-7xl mx-auto pb-20 font-sans">
+      <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-4 border-b border-red-900/30 pb-6">
+          <div>
+              <h1 className="text-4xl font-bold text-white font-orbitron tracking-tighter flex items-center gap-3">
+                  <span className="bg-red-600 px-2 rounded text-black text-2xl">MASTER</span>
+                  COMMAND_CENTER
+              </h1>
+              <p className="text-red-500 font-mono text-[10px] mt-1 animate-pulse uppercase tracking-[0.2em]">Sessão de Superadmin Ativa: Acesso Total</p>
+          </div>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-full pb-2">
+              {[
+                {id: 'OVERVIEW', label: 'Painel'},
+                {id: 'PRICING', label: 'Regras de Taxa'},
+                {id: 'FINANCIALS', label: 'Relatórios'},
+                {id: 'LOGS', label: 'Auditoria'},
+                {id: 'CONTENT', label: 'IA Content'},
+                {id: 'SYSTEM', label: 'System'}
+              ].map(tab => (
+                <button 
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)} 
+                    className={`px-4 py-2 rounded-lg font-bold text-[10px] uppercase tracking-widest whitespace-nowrap transition-all ${
+                        activeTab === tab.id ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]' : 'text-gray-400 hover:text-white bg-gray-900/50 border border-gray-800'
+                    }`}
+                >
+                    {tab.label}
+                </button>
+              ))}
           </div>
       </div>
 
-      {activeTab === 'SYSTEM' && <SystemConfiguration />}
-
-      {activeTab === 'CONTENT_ENGINE' && <ContentEngine />}
-
-      {activeTab === 'DISPUTES' && (
-          <AdminDisputeCenter 
-            disputes={disputes} 
-            onResolve={onResolveDispute || (() => {})} 
-          />
-      )}
-
-      {activeTab === 'DATABASE' && (
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 animate-fade-in">
-              <h2 className="text-2xl font-bold text-white mb-4">Database Operations</h2>
-              <div className="grid md:grid-cols-2 gap-8">
-                  {/* Setup Guide */}
-                  <div className="bg-black/30 p-6 rounded-xl border border-gray-700">
-                      <h3 className="text-lg font-bold text-white mb-2">1. Setup Supabase Schema</h3>
-                      <p className="text-gray-400 text-sm mb-6">
-                          Before seeding data, you must create the tables in your Supabase project.
-                      </p>
-                      <button 
-                        onClick={() => setShowSql(!showSql)}
-                        className="w-full bg-cyan-900/50 hover:bg-cyan-900 text-cyan-400 border border-cyan-700 font-bold py-3 rounded-lg transition-all mb-4"
-                      >
-                          {showSql ? 'Hide SQL' : 'View SQL Schema Code'}
-                      </button>
-                      
-                      {showSql && (
-                          <div className="relative">
-                              <textarea 
-                                readOnly 
-                                value={SCHEMA_SQL}
-                                className="w-full h-64 bg-black border border-gray-800 rounded p-4 text-xs font-mono text-green-400 focus:outline-none mb-2"
-                              />
-                              <button 
-                                onClick={() => navigator.clipboard.writeText(SCHEMA_SQL)}
-                                className="absolute top-2 right-2 text-xs bg-gray-800 text-white px-2 py-1 rounded hover:bg-gray-700"
-                              >
-                                  Copy
-                              </button>
-                          </div>
-                      )}
+      {activeTab === 'OVERVIEW' && (
+          <div className="animate-fade-in space-y-8">
+              {/* KPIs de BI */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
+                      <p className="text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-1">Total Movimentado (GMV)</p>
+                      <h3 className="text-2xl font-bold text-white font-mono">R$ 142.900</h3>
+                      <div className="mt-2 text-green-500 text-[10px] font-bold">↑ 22% este mês</div>
                   </div>
+                  <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
+                      <p className="text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-1">Receita Plataforma (Net)</p>
+                      <h3 className="text-2xl font-bold text-cyan-400 font-mono">R$ 21.435</h3>
+                      <div className="text-[10px] text-gray-500">Take Rate Avg: 15%</div>
+                  </div>
+                  <div className="bg-gray-900 border border-red-900/30 p-6 rounded-2xl bg-gradient-to-br from-red-900/10 to-transparent">
+                      <p className="text-red-400 text-[10px] uppercase font-bold tracking-widest mb-1">Payouts Pendentes</p>
+                      <h3 className="text-2xl font-bold text-white font-mono">R$ 12.400</h3>
+                      <div className="mt-2 animate-pulse text-red-500 text-[10px]">Ação Necessária</div>
+                  </div>
+                  <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
+                      <p className="text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-1">Contas sob Revisão</p>
+                      <h3 className="text-2xl font-bold text-yellow-500 font-mono">{teachers.filter(t => !t.verified).length}</h3>
+                      <div className="text-[10px] text-gray-500">Compliance Check</div>
+                  </div>
+              </div>
 
-                  {/* Seed Action */}
-                  <div className="bg-black/30 p-6 rounded-xl border border-gray-700">
-                      <h3 className="text-lg font-bold text-white mb-2">2. Inject Initial Data</h3>
-                      <p className="text-gray-400 text-sm mb-6">
-                          Populate the remote Supabase database with the local Mock Data. 
-                          <br/>
-                          <span className="text-yellow-500">⚠️ Only use this after running the SQL schema.</span>
-                      </p>
-                      <button 
-                        onClick={handleSeedDatabase}
-                        disabled={isSeeding}
-                        className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition-all flex justify-center items-center gap-2"
-                      >
-                          {isSeeding ? 'Syncing...' : 'Inject Mock Data to DB'}
-                          {!isSeeding && <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4-4m4 4V4" /></svg>}
-                      </button>
+              {/* Simulador de Split para o Master */}
+              <div className="bg-black/50 border border-gray-800 rounded-3xl p-8">
+                  <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                      <svg className="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                      Simulador de Split (Validação de Regras)
+                  </h3>
+                  <div className="grid md:grid-cols-3 gap-8 items-center">
+                      <div>
+                          <label className="block text-[10px] text-gray-500 font-bold uppercase mb-2">Valor da Venda (R$)</label>
+                          <input 
+                            type="number" 
+                            value={simulatedPrice} 
+                            onChange={(e) => setSimulatedPrice(Number(e.target.value))}
+                            className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 outline-none font-mono"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-[10px] text-gray-500 font-bold uppercase mb-2">Selecionar Professor</label>
+                          <select 
+                            value={selectedTeacherId}
+                            onChange={(e) => setSelectedTeacherId(e.target.value)}
+                            className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-500 outline-none"
+                          >
+                              {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                      </div>
+                      <div className="bg-gray-800/50 p-6 rounded-2xl border border-gray-700 flex justify-between items-center">
+                          <div>
+                              <p className="text-[10px] text-gray-500 font-bold uppercase">Resultado do Split</p>
+                              <div className="flex gap-4 mt-1">
+                                  <div className="text-center">
+                                      <p className="text-[9px] text-cyan-500 font-bold">PLATAFORMA ({splitPreview.platformFeePercent}%)</p>
+                                      <p className="text-xl font-bold text-white font-mono">R$ {splitPreview.platformFee?.toFixed(2)}</p>
+                                  </div>
+                                  <div className="w-px h-8 bg-gray-700"></div>
+                                  <div className="text-center">
+                                      <p className="text-[9px] text-purple-500 font-bold">PROFESSOR</p>
+                                      <p className="text-xl font-bold text-white font-mono">R$ {splitPreview.netAmount?.toFixed(2)}</p>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
                   </div>
               </div>
           </div>
       )}
 
-      {activeTab === 'OVERVIEW' && (
-          <>
-            {/* Stats Row */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-                <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                    <p className="text-gray-500 text-xs uppercase">Total Revenue (Month)</p>
-                    <h3 className="text-2xl font-bold text-white">R$ 45.230,00</h3>
-                </div>
-                <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                    <p className="text-gray-500 text-xs uppercase">Platform Net (20%)</p>
-                    <h3 className="text-2xl font-bold text-green-400">R$ 9.046,00</h3>
-                </div>
-                <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                    <p className="text-gray-500 text-xs uppercase">Active Teachers</p>
-                    <h3 className="text-2xl font-bold text-blue-400">{activeTeachers.length}</h3>
-                </div>
-                <div className="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
-                    <p className="text-gray-500 text-xs uppercase">Pending Applications</p>
-                    <h3 className="text-2xl font-bold text-yellow-400">{pendingTeachers.length}</h3>
-                </div>
-            </div>
-
-            <div className="grid lg:grid-cols-2 gap-8">
-                {/* Pending Applications */}
-                <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                        <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
-                        Pending Verifications
-                    </h3>
-                    
-                    {pendingTeachers.length === 0 ? (
-                        <p className="text-gray-500 italic">No pending applications.</p>
-                    ) : (
-                        <div className="space-y-4">
-                            {pendingTeachers.map(teacher => (
-                                <div key={teacher.id} className="bg-black/40 border border-gray-700 p-4 rounded-xl">
-                                    <div className="flex items-center gap-4 mb-3">
-                                        <img src={teacher.photoUrl} className="w-12 h-12 rounded-full" alt={teacher.name} />
-                                        <div>
-                                            <h4 className="font-bold text-white">{teacher.name}</h4>
-                                            <p className="text-xs text-gray-400">{teacher.location}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2 mb-3">
-                                        {teacher.niche.map(n => (
-                                            <span key={n} className="text-[10px] bg-gray-800 px-2 py-1 rounded text-gray-300">{n}</span>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2 mt-4">
-                                        <button 
-                                            onClick={() => onVerifyTeacher(teacher.id)}
-                                            className="flex-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded-lg transition-colors"
-                                        >
-                                            Approve & Verify
-                                        </button>
-                                        <button 
-                                            onClick={() => onDeleteTeacher(teacher.id)}
-                                            className="flex-1 bg-red-900/50 hover:bg-red-900 text-red-300 text-xs font-bold py-2 rounded-lg transition-colors"
-                                        >
-                                            Reject
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* Recent Payouts Logic (Mock) */}
-                <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-white mb-4">Recent Payouts (PIX)</h3>
-                    <div className="space-y-3">
-                        {[1, 2, 3, 4, 5].map((i) => (
-                            <div key={i} className="flex justify-between items-center text-sm border-b border-gray-800 pb-2">
-                                <span className="text-gray-400">Teacher ID #T{100+i}</span>
-                                <span className="text-white font-mono">R$ {Math.floor(Math.random() * 500) + 100},00</span>
-                                <span className="text-green-500 text-xs font-bold border border-green-900 bg-green-900/30 px-2 py-0.5 rounded">PAID</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-          </>
+      {activeTab === 'PRICING' && (
+          <div className="animate-fade-in space-y-6">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                  <h3 className="text-xl font-bold text-white mb-6">Configuração de Taxas e Comissões</h3>
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                          <thead>
+                              <tr className="text-[10px] text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                                  <th className="pb-4">Escopo (Prioridade)</th>
+                                  <th className="pb-4">Alvo</th>
+                                  <th className="pb-4 text-center">Taxa (%)</th>
+                                  <th className="pb-4">Descrição</th>
+                                  <th className="pb-4">Última Alteração</th>
+                                  <th className="pb-4 text-right">Ação</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-800/50">
+                              {rules.map(rule => (
+                                  <tr key={rule.id} className="text-sm">
+                                      <td className="py-4">
+                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                              rule.scope === 'ITEM' ? 'bg-purple-900/30 text-purple-400 border border-purple-800' :
+                                              rule.scope === 'TEACHER' ? 'bg-cyan-900/30 text-cyan-400 border border-cyan-800' :
+                                              'bg-gray-800 text-gray-400'
+                                          }`}>
+                                              {rule.scope} {rule.scope === 'ITEM' ? '(1)' : rule.scope === 'TEACHER' ? '(2)' : '(3)'}
+                                          </span>
+                                      </td>
+                                      <td className="py-4 text-white font-bold">{rule.teacherId || rule.itemId || 'GLOBAL'}</td>
+                                      <td className="py-4 text-center text-green-400 font-mono font-bold text-lg">{rule.platformFeePercent}%</td>
+                                      <td className="py-4 text-gray-500 italic">{rule.description}</td>
+                                      <td className="py-4 text-[10px] text-gray-500 font-mono">{rule.updatedAt}<br/>por {rule.updatedBy}</td>
+                                      <td className="py-4 text-right">
+                                          <button onClick={() => alert("Editor de regra aqui...")} className="text-cyan-400 hover:text-white text-xs font-bold">EDITAR</button>
+                                      </td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+                  <button 
+                    onClick={() => handleSaveRule({ scope: 'TEACHER', teacherId: 't2', platformFeePercent: 20, description: 'Nova regra de teste' })}
+                    className="mt-6 bg-cyan-600 text-white px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg"
+                  >
+                      + Criar Nova Regra
+                  </button>
+              </div>
+          </div>
       )}
+
+      {activeTab === 'LOGS' && (
+          <div className="bg-black border border-gray-800 rounded-2xl p-6 font-mono text-xs h-[600px] overflow-y-auto animate-fade-in custom-scrollbar">
+              <div className="flex justify-between items-center mb-6 border-b border-gray-800 pb-4">
+                  <h3 className="text-white font-bold text-sm">SECURITY_AUDIT_LOG_STREAM</h3>
+                  <span className="text-red-500 animate-pulse">● LIVE_FEED</span>
+              </div>
+              <div className="space-y-3">
+                  {auditLogs.map(log => (
+                      <div key={log.id} className="border-l-2 border-gray-800 pl-4 py-2 hover:bg-white/5 transition-colors">
+                          <div className="flex justify-between text-[10px] mb-1">
+                              <span className="text-gray-500">{log.timestamp}</span>
+                              <span className={`${log.severity === 'CRITICAL' ? 'text-red-500' : 'text-cyan-500'} font-bold`}>[{log.severity}]</span>
+                          </div>
+                          <p className="text-white">
+                              <span className="text-cyan-400">{log.adminName}</span> executou <span className="text-yellow-400">{log.action}</span> em <span className="text-purple-400">{log.targetId}</span>
+                          </p>
+                          <div className="mt-1 text-gray-500 flex gap-4">
+                              <span>PREV: {JSON.stringify(log.changes.before)}</span>
+                              <span>NEW: {JSON.stringify(log.changes.after)}</span>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'CONTENT' && <ContentEngine />}
+      {activeTab === 'SYSTEM' && <SystemConfiguration />}
     </div>
   );
 };

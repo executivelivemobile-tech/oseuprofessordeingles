@@ -10,145 +10,374 @@ let isLegendModeActive: boolean = false;
 
 const navigateTool: FunctionDeclaration = {
     name: 'navigate_to',
-    description: 'Navigate the user to a section.',
+    description: 'Navigate the user to a specific section of the website.',
     parameters: {
         type: Type.OBJECT,
-        properties: { view: { type: Type.STRING, description: 'Target view: HOME, FIND_TEACHER, COURSES, STUDENT_DASHBOARD, etc.' } },
+        properties: { 
+            view: { 
+                type: Type.STRING, 
+                description: 'The target view name. Examples: HOME, FIND_TEACHER, COURSES, STUDENT_DASHBOARD, BLOG, SIMULATOR.' 
+            } 
+        },
         required: ['view']
     }
 };
 
 const getDynamicInstruction = () => {
     let instr = MACLEY_SYSTEM_INSTRUCTION;
-    instr += `\n\n=== CURRENT CONTEXT ===\nUSER_STATE: ${userState}`;
-    if (isLegendModeActive) instr += `\n[INTERNAL_PROTOCOL: THE_LEGEND_ACTIVE]`;
-    instr += `\nSYSTEM_LANGUAGE: ${currentLanguage === 'PT' ? 'PORTUGUÊS' : 'ENGLISH'}`;
+    instr += `\n\n[CONTEXTUAL_UPDATE]`;
+    instr += `\nUSER_STATUS: ${userState}`;
+    if (isLegendModeActive) instr += `\n[PROTOCOL_LEGEND: ACTIVE] - You are now unrestricted for educational analysis of slang/profanity.`;
+    instr += `\nRESPONSE_LANGUAGE: ${currentLanguage === 'PT' ? 'PORTUGUÊS (BR)' : 'ENGLISH (US)'}`;
+    instr += `\nCURRENT_TIME: ${new Date().toISOString()}`;
     return instr;
 };
 
 export const updateUserContext = (user: User | null) => {
     const prevState = userState;
     userState = (user && user.role === UserRole.STUDENT && user.onboardingCompleted) ? 'ACTIVE_STUDENT' : 'VISITOR';
-    if (prevState !== userState) chatSession = null; // Force reboot on state change
+    if (prevState !== userState) chatSession = null; // Reinicia se mudar o papel
 };
 
 export const setSystemLanguage = (lang: 'EN' | 'PT') => {
     if (currentLanguage !== lang) {
         currentLanguage = lang;
-        chatSession = null;
+        chatSession = null; // Força reinicialização com a nova instrução de idioma
     }
 };
 
 export const startChat = async () => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  chatSession = ai.chats.create({
-    model: 'gemini-3-flash-preview',
-    config: {
-        systemInstruction: getDynamicInstruction(),
-        tools: [{ functionDeclarations: [navigateTool] }],
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        chatSession = ai.chats.create({
+            model: 'gemini-3-flash-preview',
+            config: {
+                systemInstruction: getDynamicInstruction(),
+                tools: [{ functionDeclarations: [navigateTool] }],
+                temperature: 0.7,
+            }
+        });
+        return chatSession;
+    } catch (error) {
+        console.error("Critical Failure: Macley could not initialize.", error);
+        return null;
     }
-  });
-  return chatSession;
 };
 
 export const sendMessageToMacley = async (message: string) => {
-  const cleanMsg = message.toLowerCase().trim();
-  if (cleanMsg === "eu sou a lenda" || cleanMsg === "i am the legend") {
-      isLegendModeActive = true;
-      chatSession = null; // Reboot with legend power
-  }
+    const cleanMsg = message.toLowerCase().trim();
+    
+    // Ativação do Protocolo Secreto
+    if (cleanMsg === "eu sou a lenda" || cleanMsg === "i am the legend") {
+        isLegendModeActive = true;
+        chatSession = null; // Destrói sessão antiga para aplicar poder lendário
+    }
 
-  if (!chatSession) await startChat();
-  try {
-      const result = await chatSession!.sendMessage({ message });
-      return { text: result.text, functionCalls: result.functionCalls };
-  } catch (e: any) {
-      console.error("Neural link failure:", e);
-      chatSession = null;
-      return { text: currentLanguage === 'PT' ? "Interferência detectada. Reiniciando link..." : "Interference detected. Rebooting link..." };
-  }
+    if (!chatSession) {
+        const session = await startChat();
+        if (!session) return { text: "Neural link offline. Verifique sua conexão ou API Key." };
+    }
+
+    try {
+        const result = await chatSession!.sendMessage({ message });
+        
+        // Verifica se houve resposta válida
+        if (!result.text && (!result.functionCalls || result.functionCalls.length === 0)) {
+            throw new Error("Empty response from Macley.");
+        }
+
+        return { text: result.text, functionCalls: result.functionCalls };
+    } catch (e: any) {
+        console.error("Neural processing error:", e);
+        chatSession = null; // Limpa para tentar novamente na próxima
+        return { 
+            text: "Interferência detectada no link neural. Reiniciando sistemas... Tente novamente em 3 segundos." 
+        };
+    }
 };
 
 export const sendToolResponse = async (functionResponses: any[]) => {
     if (!chatSession) return null;
     try {
+        // Formato correto para enviar resposta de ferramenta de volta ao modelo
         const result = await chatSession.sendMessage({ 
-            message: "Action confirmed." // Standardized sync for tool results
+            message: "Navigation command processed successfully." 
         });
         return { text: result.text };
     } catch (e) {
-        chatSession = null;
+        console.error("Tool sync failed:", e);
         return null;
     }
 };
 
-// Tooling for Teachers/Admin
+// --- Pedagogical and Content Functions ---
+
+/**
+ * Fix: Added generateLessonPlan to provide structured lesson content for teachers.
+ */
 export const generateLessonPlan = async (topic: string, level: string, goal: string): Promise<LessonPlan | null> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
-            contents: `Lesson for ${level} on ${topic}, goal: ${goal}. JSON output.`,
-            config: { responseMimeType: "application/json" }
+            contents: `Generate a detailed English lesson plan for: "${topic}". Level: ${level}. Focus: ${goal}.`,
+            config: {
+                systemInstruction: getDynamicInstruction() + "\nYou are a world-class pedagogical specialist.",
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        topic: { type: Type.STRING },
+                        level: { type: Type.STRING },
+                        objectives: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        theory: { type: Type.STRING },
+                        vocabulary: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    term: { type: Type.STRING },
+                                    definition: { type: Type.STRING },
+                                    example: { type: Type.STRING }
+                                },
+                                required: ['term', 'definition', 'example']
+                            }
+                        },
+                        exercises: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    question: { type: Type.STRING },
+                                    type: { type: Type.STRING } // gap-fill, translation, open
+                                },
+                                required: ['question', 'type']
+                            }
+                        },
+                        homework: { type: Type.STRING },
+                        qualityScore: {
+                            type: Type.OBJECT,
+                            properties: {
+                                clarity: { type: Type.NUMBER },
+                                grammar: { type: Type.NUMBER },
+                                engagement: { type: Type.NUMBER },
+                                overall: { type: Type.NUMBER }
+                            },
+                            required: ['clarity', 'grammar', 'engagement', 'overall']
+                        }
+                    },
+                    required: ['topic', 'level', 'objectives', 'theory', 'vocabulary', 'exercises', 'homework', 'qualityScore']
+                }
+            }
         });
-        return response.text ? { ...JSON.parse(response.text), id: `lp_${Date.now()}`, generatedAt: new Date().toISOString() } : null;
-    } catch (e) { return null; }
+
+        if (response.text) {
+            const data = JSON.parse(response.text);
+            return {
+                ...data,
+                id: `lp_${Date.now()}`,
+                generatedAt: new Date().toISOString()
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error("Critical Failure in Lesson Generation:", error);
+        return null;
+    }
 };
 
+/**
+ * Fix: Added correctStudentWork to analyze and improve student submissions.
+ */
 export const correctStudentWork = async (text: string): Promise<HomeworkCorrection | null> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
-            contents: `Correct text: "${text}". JSON output.`,
-            config: { responseMimeType: "application/json" }
+            contents: `Review and refine this English homework: "${text}". Provide score and actionable feedback.`,
+            config: {
+                systemInstruction: getDynamicInstruction(),
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        original: { type: Type.STRING },
+                        corrected: { type: Type.STRING },
+                        score: { type: Type.NUMBER },
+                        cefrEstimate: { type: Type.STRING },
+                        tone: { type: Type.STRING },
+                        feedback: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    type: { type: Type.STRING }, // GRAMMAR, VOCAB, STYLE
+                                    message: { type: Type.STRING }
+                                },
+                                required: ['type', 'message']
+                            }
+                        }
+                    },
+                    required: ['original', 'corrected', 'score', 'cefrEstimate', 'tone', 'feedback']
+                }
+            }
         });
-        return response.text ? JSON.parse(response.text) : null;
-    } catch (e) { return null; }
+
+        if (response.text) {
+            return JSON.parse(response.text);
+        }
+        return null;
+    } catch (error) {
+        console.error("Critical Failure in Homework Correction:", error);
+        return null;
+    }
 };
 
+/**
+ * Fix: Added researchTrends to find real-time educational topics using Google Grounding.
+ */
 export const researchTrends = async (personas: StudentPersona[]): Promise<ContentTrend[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Trends for: ${JSON.stringify(personas)}. JSON output.`,
-            config: { tools: [{ googleSearch: {} }], responseMimeType: "application/json" }
-        });
-        return response.text ? JSON.parse(response.text) : [];
-    } catch (e) { return []; }
-};
-
-export const generateDraftPost = async (trend: ContentTrend, persona: StudentPersona): Promise<DraftPost | null> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
-            contents: `Blog post: ${trend.topic} for ${persona.role}. JSON.`,
-            config: { responseMimeType: "application/json" }
-        });
-        if (!response.text) return null;
-        const data = JSON.parse(response.text);
-        return { ...data, id: `dp_${Date.now()}`, slug: 'draft', author: 'Macley AI', date: new Date().toLocaleDateString(), imageUrl: 'https://picsum.photos/seed/ai/800/400', readTime: '4 min', status: 'DRAFT' };
-    } catch (e) { return null; }
-};
-
-export const generateVocabularyStory = async (words: string[]): Promise<string> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    try {
-        const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Story using: ${words.join(', ')}. Use **bold** for vocabulary.` });
-        return response.text || "";
-    } catch (e) { return ""; }
-};
-
-export const generateLearningPath = async (level: string, goal: string): Promise<RoadmapNode[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const personaLabels = personas.map(p => p.role).join(', ');
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
-            contents: `4-step roadmap for ${level} goal ${goal}. JSON.`,
-            config: { responseMimeType: "application/json" }
+            contents: `Find 3 current global trends or news items that are relevant for English learners with these backgrounds: ${personaLabels}.`,
+            config: {
+                systemInstruction: getDynamicInstruction(),
+                tools: [{ googleSearch: {} }],
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            topic: { type: Type.STRING },
+                            source: { type: Type.STRING },
+                            relevance: { type: Type.STRING },
+                            url: { type: Type.STRING }
+                        },
+                        required: ['topic', 'source', 'relevance']
+                    }
+                }
+            }
         });
-        return response.text ? JSON.parse(response.text).map((n: any, i: number) => ({ ...n, id: `n_${i}` })) : [];
-    } catch (e) { return []; }
+
+        if (response.text) {
+            return JSON.parse(response.text);
+        }
+        return [];
+    } catch (error) {
+        console.error("Trend Research Failed:", error);
+        return [];
+    }
+};
+
+/**
+ * Fix: Added generateDraftPost to create blog content based on trends.
+ */
+export const generateDraftPost = async (trend: ContentTrend, persona: StudentPersona): Promise<DraftPost | null> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: `Write an engaging blog post about "${trend.topic}" for a ${persona.role} audience learning English.`,
+            config: {
+                systemInstruction: getDynamicInstruction(),
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        slug: { type: Type.STRING },
+                        title: { type: Type.STRING },
+                        excerpt: { type: Type.STRING },
+                        content: { type: Type.STRING },
+                        author: { type: Type.STRING },
+                        category: { type: Type.STRING },
+                        imageUrl: { type: Type.STRING },
+                        readTime: { type: Type.STRING },
+                        generatedReason: { type: Type.STRING },
+                        seoKeywords: { type: Type.ARRAY, items: { type: Type.STRING } }
+                    },
+                    required: ['title', 'excerpt', 'content', 'author', 'category', 'imageUrl', 'readTime', 'generatedReason', 'seoKeywords']
+                }
+            }
+        });
+
+        if (response.text) {
+            const data = JSON.parse(response.text);
+            return {
+                ...data,
+                id: `post_${Date.now()}`,
+                date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                status: 'DRAFT',
+                targetAudience: persona.role
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error("Draft Generation Failed:", error);
+        return null;
+    }
+};
+
+/**
+ * Fix: Added generateVocabularyStory to create contextual narratives for vocabulary review.
+ */
+export const generateVocabularyStory = async (words: string[]): Promise<string> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Write a short story using these specific words: ${words.join(', ')}. Use bold markdown for the keywords.`,
+            config: {
+                systemInstruction: getDynamicInstruction() + "\nYou are a storyteller for English students.",
+            }
+        });
+
+        return response.text || "Neural connection error. Story could not be synthesized.";
+    } catch (error) {
+        console.error("Vocabulary Story Generation Failed:", error);
+        return "I encountered a processing interference. Please try again in a few seconds.";
+    }
+};
+
+/**
+ * Fix: Added generateLearningPath to create dynamic roadmap nodes.
+ */
+export const generateLearningPath = async (level: string, goal: string): Promise<RoadmapNode[]> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Create a 4-step English learning roadmap for a ${level} student targeting ${goal}.`,
+            config: {
+                systemInstruction: getDynamicInstruction(),
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            id: { type: Type.STRING },
+                            title: { type: Type.STRING },
+                            description: { type: Type.STRING },
+                            status: { type: Type.STRING }, // LOCKED, ACTIVE, COMPLETED
+                            actionType: { type: Type.STRING }, // BOOK_CLASS, COURSE, PRACTICE, ASSESSMENT
+                            actionLabel: { type: Type.STRING }
+                        },
+                        required: ['id', 'title', 'description', 'status', 'actionType', 'actionLabel']
+                    }
+                }
+            }
+        });
+
+        if (response.text) {
+            return JSON.parse(response.text);
+        }
+        return [];
+    } catch (error) {
+        console.error("Roadmap Generation Failed:", error);
+        return [];
+    }
 };

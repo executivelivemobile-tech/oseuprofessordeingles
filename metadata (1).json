@@ -1,0 +1,9 @@
+
+{
+  "name": "oseuprofessordeingles.com",
+  "description": "A hyper-modern, futuristic English learning ecosystem connecting students with elite teachers and courses. Features a 3D interface and the Macley AI assistant.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
