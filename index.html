@@ -6,23 +6,65 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>O Seu Professor de Inglês | The Future of Learning</title>
     
-    <!-- PWA & SEO -->
+    <!-- SEO Meta Tags -->
     <meta name="description" content="A plataforma mais futurista para aprender inglês. Encontre professores de elite, compre cursos premium e aprenda com Inteligência Artificial.">
-    <meta name="theme-color" content="#050505">
-    <link rel="manifest" href="/manifest.json">
-    <link rel="icon" type="image/png" href="https://ui-avatars.com/api/?name=OS&background=0D8ABC&color=fff">
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
+    <!-- Tailwind CSS (Vite will handle this via PostCSS/Standard Tailwind in production) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Rajdhani', 'sans-serif'],
+                        orbitron: ['Orbitron', 'sans-serif'],
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-out',
+                        'slide-up': 'slideUp 0.5s ease-out',
+                        'slide-down': 'slideDown 0.3s ease-out',
+                        'slide-left': 'slideLeft 0.4s ease-out',
+                        'scale-in': 'scaleIn 0.3s ease-out',
+                        'bounce-slow': 'bounce 3s infinite',
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        slideDown: {
+                            '0%': { transform: 'translateY(-20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        slideLeft: {
+                            '0%': { transform: 'translateX(20px)', opacity: '0' },
+                            '100%': { transform: 'translateX(0)', opacity: '1' },
+                        },
+                        scaleIn: {
+                            '0%': { transform: 'scale(0.9)', opacity: '0' },
+                            '100%': { transform: 'scale(1)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
         body {
             background-color: #050505;
             color: #e0e0e0;
             overflow-x: hidden;
-            margin: 0;
         }
         
         /* Custom Scrollbar Engine */
@@ -60,12 +102,16 @@
             backface-visibility: hidden;
             -webkit-backface-visibility: hidden;
         }
+        .rotate-y-180 {
+            transform: rotateY(180deg);
+        }
         
         /* Neon Utilities */
         .neon-text {
             text-shadow: 0 0 10px rgba(0, 217, 249, 0.7);
         }
         
+        /* Utility for Text Selection */
         ::selection {
             background: #22d3ee;
             color: #000;
@@ -74,11 +120,11 @@
 <script type="importmap">
 {
   "imports": {
-    "vite": "https://esm.sh/vite@^7.3.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.88.0"
   }
@@ -94,10 +140,12 @@
             const root = document.getElementById('root');
             if (root && root.innerHTML.trim() === '') {
                 root.innerHTML = `
-                    <div style="color: #ef4444; padding: 40px; font-family: monospace; background: #0a0000; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
-                        <h1 style="font-size: 2rem; margin-bottom: 20px;">CRITICAL_SYSTEM_FAILURE</h1>
-                        <p style="max-width: 600px; color: #888;">${message}</p>
-                        <button onclick="location.reload()" style="margin-top: 30px; background: #ef4444; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold;">REBOOT_SYSTEM</button>
+                    <div style="color: red; padding: 20px; font-family: monospace; background: #1a0000; height: 100vh;">
+                        <h1>SYSTEM CRASH DETECTED</h1>
+                        <p><strong>Error:</strong> ${message}</p>
+                        <p><strong>Source:</strong> ${source}:${lineno}</p>
+                        <hr style="border-color: #500"/>
+                        <p style="color: #ccc">Please contact systems administrator.</p>
                     </div>
                 `;
             }
